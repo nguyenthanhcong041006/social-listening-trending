@@ -1,0 +1,144 @@
+# ==============================================================================
+# PIPELINE CONFIGURATION - SOCIAL LISTENING & TREND PREDICTION
+# ==============================================================================
+
+project:
+  name: "social_listening_trend_prediction"
+  version: "1.0.0"
+  random_seed: 42
+  device: "cuda"  # "cuda" or "cpu"
+
+# ------------------------------------------------------------------------------
+# Data and Artifact Paths
+# ------------------------------------------------------------------------------
+paths:
+  raw_data_dir: "data/01_raw"
+  preprocessed_data_dir: "data/02_preprocessed"
+  embeddings_dir: "data/03_embeddings_sentiment"
+  topics_dir: "data/04_topics"
+  topic_tracking_dir: "data/05_topic_tracking"
+  features_labels_dir: "data/06_features_labels"
+  splits_dir: "data/07_splits"
+  predictions_dir: "data/08_predictions"
+  models_dir: "models"
+
+# ------------------------------------------------------------------------------
+# Stage 1: Data Collection Schema & Ingestion
+# ------------------------------------------------------------------------------
+stage_01_data_collection:
+  required_fields:
+    - "text"
+    - "timestamp"
+    - "likes"
+    - "shares"
+    - "comments"
+    - "hashtags"
+    - "followers"
+  batch_size: 1000
+
+# ------------------------------------------------------------------------------
+# Stage 2: Preprocessing Data
+# ------------------------------------------------------------------------------
+stage_02_preprocessing:
+  deduplication:
+    method: "exact_and_similarity" # "exact" or "similarity"
+    similarity_threshold: 0.95
+    subset_columns: ["text"]
+  spam_filter:
+    min_followers: 5
+    max_hashtags: 15
+    max_urls: 4
+    spam_keywords_path: null
+  text_cleaning:
+    remove_html: true
+    normalize_whitespace: true
+    remove_urls: true
+  text_normalization:
+    unicode_form: "NFKC"
+    lowercase: true
+    max_repeated_chars: 2  # e.g., "yesssss" -> "yess"
+  preserve_semantic:
+    preserve_hashtags: true
+    demojize: false        # Retain raw emojis for multilingual models or convert to text
+    preserve_negation: true # Protect negation context (prevent aggressive stopword stripping)
+
+# ------------------------------------------------------------------------------
+# Stage 3: Multilingual Representation & Sentiment Analysis (XLM-RoBERTa)
+# ------------------------------------------------------------------------------
+stage_03_multilingual_sentiment:
+  model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+  max_length: 128
+  batch_size: 32
+  pooling: "mean" # Attention-mask-aware mean pooling
+  sentiment_score_formula: "P(positive) - P(negative)" # Metric scale [-1.0, 1.0]
+
+# ------------------------------------------------------------------------------
+# Stage 4: Topic Detection (BERTopic)
+# ------------------------------------------------------------------------------
+stage_04_topic_detection:
+  umap:
+    n_neighbors: 15
+    n_components: 5
+    min_dist: 0.0
+    metric: "cosine"
+  hdbscan:
+    min_cluster_size: 10
+    min_samples: 5
+    metric: "euclidean"
+    prediction_data: true
+  representation:
+    top_n_words: 10
+    diversity: 0.3
+    ngram_range: [1, 2]
+
+# ------------------------------------------------------------------------------
+# Stage 5: Topic Tracking
+# ------------------------------------------------------------------------------
+stage_05_topic_tracking:
+  time_window: "1D"  # Time aggregation window: "1H", "1D", "7D"
+  engagement_weights:
+    likes: 1.0
+    shares: 2.0
+    comments: 1.5
+
+# ------------------------------------------------------------------------------
+# Stage 6: Feature Engineering & Label Data
+# ------------------------------------------------------------------------------
+stage_06_feature_engineering_labeling:
+  feature_engineering:
+    lags: [1, 2, 3] # Time-lag features
+    rolling_windows: [3, 7]
+    include_acceleration: true
+  labeling:
+    future_time_window_steps: 3  # Forward lookahead steps
+    future_growth_threshold: 0.5 # Growth >= 50%
+    future_volume_threshold: 20  # Future volume >= 20 posts
+
+# ------------------------------------------------------------------------------
+# Stage 7: Time-Based Data Splitting
+# ------------------------------------------------------------------------------
+stage_07_time_based_split:
+  train_ratio: 0.70
+  valid_ratio: 0.20
+  test_ratio: 0.10
+
+# ------------------------------------------------------------------------------
+# Stage 8: Prediction Models & Feature Fusion
+# ------------------------------------------------------------------------------
+stage_08_prediction_models:
+  sarima:
+    order: [1, 1, 1]          # (p, d, q)
+    seasonal_order: [1, 1, 0, 7] # (P, D, Q, s) - weekly seasonality
+    forecast_steps: 3
+  feature_fusion:
+    scaler: "standard" # "standard" or "minmax"
+  lightgbm:
+    objective: "binary"
+    metric: "auc"
+    boosting_type: "gbdt"
+    n_estimators: 200
+    learning_rate: 0.05
+    num_leaves: 31
+    max_depth: -1
+    feature_fraction: 0.8
+    verbose: -1

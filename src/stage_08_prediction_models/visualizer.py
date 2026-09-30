@@ -1,0 +1,304 @@
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import (
+    roc_curve,
+    auc,
+    precision_recall_curve,
+    average_precision_score,
+    confusion_matrix,
+)
+from sklearn.calibration import calibration_curve
+from typing import List, Optional
+from loguru import logger
+from src.utils.file_io import ensure_dir
+
+# Set modern styling for all generated figures
+sns.set_theme(style="whitegrid", palette="muted")
+plt.rcParams.update({
+    "font.size": 11,
+    "axes.titlesize": 13,
+    "axes.labelsize": 11,
+    "figure.titlesize": 15,
+})
+
+def plot_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: List[str] = None,
+    save_path: Optional[str] = None,
+    normalize: bool = False
+):
+    """
+    Plots a Confusion Matrix Heatmap for Trending vs Not Trending classes.
+    """
+    if class_names is None:
+        class_names = ["Not Trending (0)", "Trending (1)"]
+    
+    cm = confusion_matrix(y_true, y_pred)
+    fmt = ".2f" if normalize else "d"
+    if normalize:
+        cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt=fmt,
+        cmap="Blues",
+        xticklabels=class_names,
+        yticklabels=class_names,
+        cbar=True,
+        ax=ax
+    )
+    ax.set_title("Confusion Matrix Heatmap")
+    ax.set_ylabel("True Ground-Truth Label")
+    ax.set_xlabel("Predicted Model Label")
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Confusion Matrix plot to: {save_path}")
+    return fig, ax
+
+def plot_roc_curve(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    save_path: Optional[str] = None
+):
+    """
+    Plots the Receiver Operating Characteristic (ROC) curve with AUC score.
+    """
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_auc = auc(fpr, tpr)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.plot(fpr, tpr, color="#2b5c8f", lw=2.5, label=f"LightGBM ROC Curve (AUC = {roc_auc:.3f})")
+    ax.plot([0, 1], [0, 1], color="#999999", lw=1.5, linestyle="--", label="Random Chance (AUC = 0.500)")
+    
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel("False Positive Rate (1 - Specificity)")
+    ax.set_ylabel("True Positive Rate (Sensitivity / Recall)")
+    ax.set_title("Receiver Operating Characteristic (ROC) Curve")
+    ax.legend(loc="lower right", frameon=True)
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved ROC Curve plot to: {save_path}")
+    return fig, ax
+
+def plot_precision_recall_curve(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    save_path: Optional[str] = None
+):
+    """
+    Plots the Precision-Recall Curve with Average Precision (AP).
+    Crucial for imbalanced social media trend detection tasks.
+    """
+    precision, recall, _ = precision_recall_curve(y_true, y_prob)
+    avg_precision = average_precision_score(y_true, y_prob)
+    baseline_prevalence = np.mean(y_true)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.plot(recall, precision, color="#e6550d", lw=2.5, label=f"Precision-Recall (AP = {avg_precision:.3f})")
+    ax.axhline(y=baseline_prevalence, color="#999999", lw=1.5, linestyle="--", label=f"Baseline Prevalence ({baseline_prevalence:.2%})")
+    
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel("Recall (Detection Rate)")
+    ax.set_ylabel("Precision (Positive Predictive Value)")
+    ax.set_title("Precision-Recall Curve (Trend Detection)")
+    ax.legend(loc="upper right", frameon=True)
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Precision-Recall Curve to: {save_path}")
+    return fig, ax
+
+def plot_feature_importance(
+    feature_importance_df: pd.DataFrame,
+    top_n: int = 15,
+    save_path: Optional[str] = None
+):
+    """
+    Plots a horizontal bar chart of top feature importance scores from LightGBM.
+    Distinguishes Social Listening features from SARIMA forecast features.
+    """
+    top_df = feature_importance_df.head(top_n).copy()
+    
+    # Categorize feature source
+    def get_source(name):
+        return "SARIMA Forecast" if "sarima" in name.lower() else "Social Listening"
+    
+    top_df["Source"] = top_df["feature"].apply(get_source)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.barplot(
+        data=top_df,
+        y="feature",
+        x="importance_gain",
+        hue="Source",
+        dodge=False,
+        palette={"Social Listening": "#1f77b4", "SARIMA Forecast": "#2ca02c"},
+        ax=ax
+    )
+    ax.set_title(f"Top {top_n} Feature Importance (LightGBM Gain)")
+    ax.set_xlabel("Importance Gain")
+    ax.set_ylabel("Feature Name")
+    ax.legend(title="Feature Stream", loc="lower right", frameon=True)
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Feature Importance plot to: {save_path}")
+    return fig, ax
+
+def plot_calibration_curve(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    n_bins: int = 10,
+    save_path: Optional[str] = None
+):
+    """
+    Plots the Probability Calibration Curve (Reliability Diagram)
+    to check whether predicted probabilities match true event frequencies.
+    """
+    prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=n_bins, strategy="uniform")
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.plot(prob_pred, prob_true, marker="o", color="#756bb1", lw=2, label="LightGBM Calibration")
+    ax.plot([0, 1], [0, 1], linestyle="--", color="#999999", label="Perfect Calibration")
+    
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.0])
+    ax.set_xlabel("Mean Predicted Probability")
+    ax.set_ylabel("Fraction of Positives (True Frequency)")
+    ax.set_title("Probability Calibration Curve (Reliability Diagram)")
+    ax.legend(loc="upper left", frameon=True)
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Calibration Curve to: {save_path}")
+    return fig, ax
+
+def plot_sarima_trajectory(
+    history_times: List,
+    history_volumes: List[float],
+    forecast_times: List,
+    forecast_volumes: List[float],
+    topic_name: str = "Sample Topic",
+    save_path: Optional[str] = None
+):
+    """
+    Plots historical topic volume alongside SARIMA forecasted future trajectory.
+    """
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.plot(history_times, history_volumes, marker="o", color="#3182bd", lw=2, label="Historical Volume")
+    ax.plot(forecast_times, forecast_volumes, marker="s", color="#de2d26", linestyle="--", lw=2, label="SARIMA Forecast")
+    
+    ax.set_title(f"Topic Volume Time-Series & SARIMA Forecast: {topic_name}")
+    ax.set_xlabel("Time Bucket")
+    ax.set_ylabel("Discussion Volume (Posts)")
+    ax.legend(loc="upper left", frameon=True)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved SARIMA Trajectory plot to: {save_path}")
+    return fig, ax
+
+def plot_comprehensive_evaluation_grid(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_prob: np.ndarray,
+    feature_importance_df: Optional[pd.DataFrame] = None,
+    save_path: Optional[str] = None
+):
+    """
+    Generates a unified 4-panel dashboard containing:
+    1. Confusion Matrix
+    2. ROC Curve
+    3. Precision-Recall Curve
+    4. Top Feature Importance or Calibration Curve
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle("Comprehensive Model Evaluation Dashboard", fontsize=16, fontweight="bold")
+
+    # Panel 1: Confusion Matrix
+    cm = confusion_matrix(y_true, y_pred)
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["Not Trending", "Trending"],
+        yticklabels=["Not Trending", "Trending"],
+        ax=axes[0, 0]
+    )
+    axes[0, 0].set_title("Confusion Matrix")
+    axes[0, 0].set_xlabel("Predicted")
+    axes[0, 0].set_ylabel("Actual")
+
+    # Panel 2: ROC Curve
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_auc = auc(fpr, tpr)
+    axes[0, 1].plot(fpr, tpr, color="#2b5c8f", lw=2, label=f"ROC (AUC = {roc_auc:.3f})")
+    axes[0, 1].plot([0, 1], [0, 1], color="#999999", linestyle="--")
+    axes[0, 1].set_title("ROC Curve")
+    axes[0, 1].set_xlabel("False Positive Rate")
+    axes[0, 1].set_ylabel("True Positive Rate")
+    axes[0, 1].legend(loc="lower right")
+
+    # Panel 3: Precision-Recall Curve
+    precision, recall, _ = precision_recall_curve(y_true, y_prob)
+    ap = average_precision_score(y_true, y_prob)
+    axes[1, 0].plot(recall, precision, color="#e6550d", lw=2, label=f"PR (AP = {ap:.3f})")
+    axes[1, 0].axhline(y=np.mean(y_true), color="#999999", linestyle="--", label="Baseline")
+    axes[1, 0].set_title("Precision-Recall Curve")
+    axes[1, 0].set_xlabel("Recall")
+    axes[1, 0].set_ylabel("Precision")
+    axes[1, 0].legend(loc="upper right")
+
+    # Panel 4: Feature Importance or Calibration
+    if feature_importance_df is not None and not feature_importance_df.empty:
+        top_df = feature_importance_df.head(8).copy()
+        sns.barplot(
+            data=top_df,
+            y="feature",
+            x="importance_gain",
+            color="#2ca02c",
+            ax=axes[1, 1]
+        )
+        axes[1, 1].set_title("Top 8 Feature Importance (Gain)")
+        axes[1, 1].set_xlabel("Importance Gain")
+        axes[1, 1].set_ylabel("")
+    else:
+        prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=8)
+        axes[1, 1].plot(prob_pred, prob_true, marker="o", color="#756bb1", lw=2, label="Calibration")
+        axes[1, 1].plot([0, 1], [0, 1], linestyle="--", color="#999999")
+        axes[1, 1].set_title("Calibration Curve")
+        axes[1, 1].set_xlabel("Mean Predicted Prob")
+        axes[1, 1].set_ylabel("Fraction Positives")
+        axes[1, 1].legend(loc="upper left")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Comprehensive Evaluation Grid to: {save_path}")
+    return fig, axes

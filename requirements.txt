@@ -1,0 +1,43 @@
+# Core Data Science & Processing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+
+# Deep Learning & NLP (XLM-RoBERTa & Transformers)
+torch>=2.0.0
+transformers>=4.35.0
+sentencepiece>=0.1.99
+tokenizers>=0.15.0
+accelerate>=0.24.0
+
+# Topic Modeling & Embeddings (BERTopic, UMAP, HDBSCAN)
+bertopic>=0.16.0
+umap-learn>=0.5.5
+hdbscan>=0.8.33
+
+# Text Preprocessing & Cleaning
+ftfy>=6.1.1
+emoji>=2.8.0
+regex>=2023.10.3
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+
+# Time Series & Forecasting (SARIMA)
+statsmodels>=0.14.0
+pmdarima>=2.0.4
+
+# Machine Learning & Gradient Boosting (LightGBM)
+lightgbm>=4.1.0
+joblib>=1.3.2
+
+# Configuration & Utilities
+pydantic>=2.5.0
+pyyaml>=6.0.1
+tqdm>=4.66.1
+loguru>=0.7.2
+
+# Optional Visualization & Testing
+matplotlib>=3.8.0
+seaborn>=0.13.0
+pytest>=7.4.0
