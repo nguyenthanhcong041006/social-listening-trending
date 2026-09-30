@@ -325,11 +325,34 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 7.2. Configuration
+### 7.2. Real-World Benchmark Dataset (ChatGPT & Generative AI Tweets)
+
+The repository provides a real-world social listening dataset sourced from Twitter/X discussions on **ChatGPT & Generative AI** (spanning November 30, 2022 to February 24, 2023 - from launch day to viral explosion):
+- **Full Dataset**: `data/01_raw/chatgpt_tweets_full.parquet` (305,356 genuine tweets)
+- **Benchmark Sample**: `data/01_raw/chatgpt_tweets_benchmark.parquet` / `.csv` (11,862 posts stratified daily with viral peak retention, ideal for local execution and quick experimentation)
+- **Default Input**: Already prepared as `data/01_raw/input_data.csv` and `data/01_raw/input_data.parquet`
+
+To regenerate or customize the sample size:
+```bash
+python scripts/prepare_chatgpt_dataset.py --sample-size 12000
+```
+
+#### Multi-Domain Live Online Crawler (Sports UCL, Tech Windows, Game GOTY):
+To crawl fresh real-time online social discussions directly from HackerNews API, Reddit feeds, and Google News RSS:
+```bash
+python scripts/crawl_social_topics.py
+```
+This generates:
+- `data/01_raw/topic_sports_ucl.parquet` (UEFA Champions League)
+- `data/01_raw/topic_technology_windows.parquet` (Windows 11 events & updates)
+- `data/01_raw/topic_game_goty.parquet` (The Game Awards & Game of the Year)
+- `data/01_raw/multi_domain_4topics.parquet` (Integrated 4-domain benchmark)
+
+### 7.3. Configuration
 
 All hyperparameters, paths, and model configurations can be adjusted in [configs/config.yaml](file:///c:/Users/THANH%20CONG/Documents/social_listening/configs/config.yaml).
 
-### 7.3. Running the Pipeline
+### 7.4. Running the Pipeline
 
 #### End-to-End Execution (Stages 1 through 8):
 ```bash

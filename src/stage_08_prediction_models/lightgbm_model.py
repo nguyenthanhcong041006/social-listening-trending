@@ -42,6 +42,18 @@ class LightGBMTrendPredictor:
         """Trains LightGBM model with validation-set early stopping."""
         self.feature_names = feature_names or [f"feat_{i}" for i in range(X_train.shape[1])]
         
+        # Class imbalance handling per PDF Section 11.3
+        params = self.params.copy()
+        if "scale_pos_weight" in self.config and self.config["scale_pos_weight"] is not None:
+            params["scale_pos_weight"] = float(self.config["scale_pos_weight"])
+        elif self.config.get("auto_class_weights", True):
+            num_pos = int(np.sum(y_train == 1))
+            num_neg = int(np.sum(y_train == 0))
+            if num_pos > 0 and num_neg / num_pos > 2.0:
+                calc_weight = float(num_neg / num_pos)
+                params["scale_pos_weight"] = calc_weight
+                logger.info(f"Class imbalance detected (Neg={num_neg}, Pos={num_pos}). Auto-applied scale_pos_weight={calc_weight:.2f}")
+        
         train_data = lgb.Dataset(X_train, label=y_train, feature_name=self.feature_names)
         valid_sets = [train_data]
         valid_names = ["train"]
@@ -55,7 +67,7 @@ class LightGBMTrendPredictor:
         
         logger.info(f"Training LightGBM model on {X_train.shape[0]} samples with {X_train.shape[1]} features...")
         self.model = lgb.train(
-            self.params,
+            params,
             train_data,
             num_boost_round=self.n_estimators,
             valid_sets=valid_sets,

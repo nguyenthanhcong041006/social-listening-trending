@@ -68,7 +68,7 @@ stage_02_preprocessing:
 stage_03_multilingual_sentiment:
   model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment"
   max_length: 128
-  batch_size: 32
+  batch_size: 64
   pooling: "mean" # Attention-mask-aware mean pooling
   sentiment_score_formula: "P(positive) - P(negative)" # Metric scale [-1.0, 1.0]
 
@@ -112,7 +112,7 @@ stage_06_feature_engineering_labeling:
   labeling:
     future_time_window_steps: 3  # Forward lookahead steps
     future_growth_threshold: 0.5 # Growth >= 50%
-    future_volume_threshold: 20  # Future volume >= 20 posts
+    future_volume_threshold: 5   # Future volume >= 5 posts (tuned for clean trending distribution)
 
 # ------------------------------------------------------------------------------
 # Stage 7: Time-Based Data Splitting
@@ -141,4 +141,5 @@ stage_08_prediction_models:
     num_leaves: 31
     max_depth: -1
     feature_fraction: 0.8
+    auto_class_weights: true
     verbose: -1

@@ -36,3 +36,42 @@ def compute_engagement_score(
         shares * weights.get("shares", 2.0) +
         comments * weights.get("comments", 1.5)
     )
+
+def compute_smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """
+    Symmetric Mean Absolute Percentage Error (sMAPE):
+    Bounded between 0% and 200%. Handles zero/low volume time-series gracefully without exploding.
+    Formula (PDF Section 11.1 & 12):
+        sMAPE = (100 / n) * Σ (|y - y_hat| / ((|y| + |y_hat|) / 2))
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2.0
+    diff = np.abs(y_pred - y_true)
+    mask = denominator > 0
+    if not np.any(mask):
+        return 0.0
+    return float(np.mean(diff[mask] / denominator[mask]) * 100.0)
+
+def compute_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Mean Absolute Error (MAE)."""
+    return float(np.mean(np.abs(np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float))))
+
+def compute_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Root Mean Squared Error (RMSE)."""
+    return float(np.sqrt(np.mean((np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float)) ** 2)))
+
+def compute_recall_at_k(y_true: np.ndarray, y_prob: np.ndarray, k_pct: float = 0.20) -> float:
+    """
+    Recall@K (PDF Section 12):
+    Measures the proportion of actual trending topics captured within the top K highest-probability predictions.
+    """
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    total_positives = np.sum(y_true == 1)
+    if total_positives == 0:
+        return 1.0
+    k = max(1, int(len(y_prob) * k_pct))
+    top_k_indices = np.argsort(y_prob)[::-1][:k]
+    captured_positives = np.sum(y_true[top_k_indices] == 1)
+    return float(captured_positives / total_positives)

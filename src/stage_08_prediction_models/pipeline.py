@@ -1,7 +1,9 @@
 import os
 import json
+import numpy as np
 import pandas as pd
 from loguru import logger
+from sklearn.metrics import f1_score
 from .sarima_forecaster import SARIMAForecaster
 from .feature_fusion import FeatureFusion
 from .lightgbm_model import LightGBMTrendPredictor
@@ -14,6 +16,7 @@ from .visualizer import (
     plot_precision_recall_curve,
 )
 from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
+from src.utils.metrics_utils import compute_mae, compute_rmse, compute_smape
 
 class PredictionPipeline:
     """
@@ -65,12 +68,40 @@ class PredictionPipeline:
         # 3. Train Trend Prediction (LightGBM)
         self.predictor.train(X_train, y_train, X_valid, y_valid, feature_names=feature_cols)
         
-        # 4. Predict on Test set
-        test_preds = self.predictor.predict(X_test)
-        test_probs = self.predictor.predict_proba(X_test)
+        # 4. Tune decision threshold on Validation set (PDF Section 10)
+        valid_probs = self.predictor.predict_proba(X_valid)
+        best_threshold = 0.5
+        best_val_f1 = -1.0
+        for th in np.linspace(0.05, 0.75, 71):
+            val_preds_th = (valid_probs >= th).astype(int)
+            val_f1 = f1_score(y_valid, val_preds_th, zero_division=0)
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                best_threshold = float(th)
+        logger.info(f"Optimal classification threshold tuned on Validation set: {best_threshold:.3f} (Val F1: {best_val_f1:.4f})")
         
-        # 5. Numerical Evaluation
+        # 5. Predict on Test set using the validation-tuned threshold
+        test_probs = self.predictor.predict_proba(X_test)
+        test_preds = (test_probs >= best_threshold).astype(int)
+        
+        # 6. Numerical Evaluation (Trend Prediction & SARIMA Forecasting per PDF Section 12)
         metrics = evaluate_trend_predictions(y_test, test_preds, test_probs)
+        metrics["optimal_threshold"] = best_threshold
+        metrics["val_f1"] = float(best_val_f1)
+        
+        if "future_volume" in test_df_fc.columns and "sarima_forecast_volume" in test_df_fc.columns:
+            y_true_vol = test_df_fc["future_volume"].values
+            y_pred_vol = test_df_fc["sarima_forecast_volume"].values
+            sarima_metrics = {
+                "sarima_mae": float(compute_mae(y_true_vol, y_pred_vol)),
+                "sarima_rmse": float(compute_rmse(y_true_vol, y_pred_vol)),
+                "sarima_smape": float(compute_smape(y_true_vol, y_pred_vol)),
+            }
+            metrics.update(sarima_metrics)
+            logger.info("=== SARIMA TOPIC VOLUME FORECASTING EVALUATION (PDF Section 12) ===")
+            logger.info(f"SARIMA MAE:   {sarima_metrics['sarima_mae']:.4f}")
+            logger.info(f"SARIMA RMSE:  {sarima_metrics['sarima_rmse']:.4f}")
+            logger.info(f"SARIMA sMAPE: {sarima_metrics['sarima_smape']:.2f}%")
         
         # 6. Visual Evaluation Charts
         plots_dir = os.path.join(self.predictions_dir, "plots")

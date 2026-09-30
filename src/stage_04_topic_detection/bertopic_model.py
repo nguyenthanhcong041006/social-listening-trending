@@ -41,6 +41,17 @@ class TopicDetector:
         
         topics, probs = self.topic_model.fit_transform(docs, embeddings=embeddings)
         
+        # Step 5 (PDF Section 6): Outlier reduction and topic refinement
+        outlier_count = sum(1 for t in topics if t == -1)
+        if outlier_count > 0:
+            logger.info(f"Refining topic assignments: reducing {outlier_count} outliers via c-TF-IDF...")
+            try:
+                reduced_topics = self.topic_model.reduce_outliers(docs, topics, strategy="c-tf-idf")
+                self.topic_model.update_topics(docs, topics=reduced_topics)
+                topics = reduced_topics
+            except Exception as e:
+                logger.warning(f"Outlier reduction skipped: {e}")
+        
         df = df.copy()
         df["topic_id"] = topics
         if probs is not None and len(probs.shape) > 1:

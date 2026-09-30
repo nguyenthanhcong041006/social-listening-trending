@@ -26,8 +26,20 @@ def compute_topic_tracking_metrics(
         comments = group["comments"].sum() if "comments" in group else 0
         engagement = compute_engagement_score(likes, shares, comments, engagement_weights)
         
-        # Average sentiment score
-        avg_sentiment = group["sentiment_score"].mean() if "sentiment_score" in group else 0.0
+        # Average sentiment score and sentiment class ratios (PDF Section 7)
+        avg_sentiment = float(group["sentiment_score"].mean()) if "sentiment_score" in group else 0.0
+        
+        if "sentiment_label" in group:
+            pos_ratio = float((group["sentiment_label"] == "positive").mean())
+            neg_ratio = float((group["sentiment_label"] == "negative").mean())
+            neu_ratio = float((group["sentiment_label"] == "neutral").mean())
+        elif "sentiment_score" in group:
+            scores = group["sentiment_score"]
+            pos_ratio = float((scores > 0.05).mean())
+            neg_ratio = float((scores < -0.05).mean())
+            neu_ratio = float(((scores >= -0.05) & (scores <= 0.05)).mean())
+        else:
+            pos_ratio, neg_ratio, neu_ratio = 0.0, 0.0, 1.0
         
         # Hashtag count
         hashtags = []
@@ -47,6 +59,9 @@ def compute_topic_tracking_metrics(
             "topic_volume": volume,
             "engagement": engagement,
             "avg_sentiment": avg_sentiment,
+            "positive_ratio": pos_ratio,
+            "negative_ratio": neg_ratio,
+            "neutral_ratio": neu_ratio,
             "hashtag_activity": hashtag_activity,
             "unique_users": unique_users
         })

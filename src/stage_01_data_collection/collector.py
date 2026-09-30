@@ -12,8 +12,8 @@ COLUMN_ALIASES = {
     "shares": ["shares", "shares_count", "share_count", "retweet_count", "retweets", "reposts"],
     "comments": ["comments", "comments_count", "comment_count", "replies", "reply_count"],
     "hashtags": ["hashtags", "hashtag_list", "tags"],
-    "followers": ["followers", "followers_count", "follower_count", "user_followers", "author_followers"],
-    "post_id": ["post_id", "id", "tweet_id", "uid", "post_uid"],
+    "followers": ["followers", "followers_count", "follower_count", "user_followers", "author_followers", "userfollowers"],
+    "post_id": ["post_id", "id", "tweet_id", "uid", "post_uid", "url"],
     "platform": ["platform", "source", "network"]
 }
 
@@ -22,6 +22,7 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     Automatically maps common variations of column names to the standard schema:
     text, timestamp, likes, shares, comments, hashtags, followers.
     """
+    import re
     df = df.copy()
     col_mapping = {}
     
@@ -41,6 +42,23 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         logger.info(f"Auto-mapped dataset columns: {col_mapping}")
         df = df.rename(columns=col_mapping)
         
+    # Safe numeric casting for engagement metrics
+    for num_col in ["likes", "shares", "comments", "followers"]:
+        if num_col in df.columns:
+            df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0).astype(int).clip(lower=0)
+
+    if "post_id" in df.columns:
+        df["post_id"] = df["post_id"].astype(str)
+
+    # If comments is missing, default to 0
+    if "comments" not in df.columns:
+        df["comments"] = 0
+
+    # If hashtags is missing, extract from text
+    if "hashtags" not in df.columns and "text" in df.columns:
+        logger.info("Extracting hashtags automatically from text using regex #(\\w+)...")
+        df["hashtags"] = df["text"].astype(str).apply(lambda t: re.findall(r"#(\w+)", t))
+
     # If followers is missing, provide a safe fallback (e.g. from impressions or default)
     if "followers" not in df.columns:
         if "impressions" in df.columns:

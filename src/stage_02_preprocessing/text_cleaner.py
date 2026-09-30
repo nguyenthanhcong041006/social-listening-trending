@@ -1,12 +1,14 @@
+import html
 import re
 from bs4 import BeautifulSoup
 
 def remove_html(text: str) -> str:
-    """Removes HTML markup tags and unescapes HTML characters."""
+    """Removes HTML markup tags and unescapes HTML characters (&#39;, &amp;, etc.)."""
     if not isinstance(text, str):
         return ""
     if "<" in text and ">" in text:
         text = BeautifulSoup(text, "html.parser").get_text(separator=" ")
+    text = html.unescape(text)
     return text
 
 def remove_urls(text: str) -> str:

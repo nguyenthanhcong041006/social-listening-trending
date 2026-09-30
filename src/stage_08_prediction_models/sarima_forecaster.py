@@ -27,29 +27,30 @@ class SARIMAForecaster:
         Fits SARIMA model on the historical series of a topic and forecasts future steps.
         Falls back to moving average extrapolation if historical series is too short or non-convergent.
         """
-        if len(history_series) < 5:
-            forecast_vol = float(np.mean(history_series)) if len(history_series) > 0 else 0.0
-            forecast_growth = 0.0
-            return forecast_vol, forecast_growth
+        min_obs = max(14, self.seasonal_order[3] * 2 if len(self.seasonal_order) > 3 else 10)
+        if len(history_series) < min_obs:
+            recent_mean = float(np.mean(history_series[-3:])) if len(history_series) > 0 else 0.0
+            return recent_mean * self.forecast_steps, 0.0
         
         try:
+            # Use recent window up to 40 steps for fast, stable SARIMA fitting
+            window_series = history_series[-40:]
             model = SARIMAX(
-                history_series,
+                window_series,
                 order=self.order,
                 seasonal_order=self.seasonal_order,
                 enforce_stationarity=False,
                 enforce_invertibility=False
             )
-            model_fit = model.fit(disp=False)
+            model_fit = model.fit(disp=False, maxiter=20)
             forecast = model_fit.forecast(steps=self.forecast_steps)
             forecast_vol = float(np.sum(forecast))
             
             # Forecasted growth rate compared to current baseline
-            current_vol = history_series[-1]
+            current_vol = window_series[-1]
             forecast_growth = float((forecast_vol - current_vol * self.forecast_steps) / max(current_vol * self.forecast_steps, 1))
             return forecast_vol, forecast_growth
         except Exception as e:
-            logger.debug(f"SARIMA failed to converge, applying fallback: {e}")
             recent_mean = float(np.mean(history_series[-3:]))
             return recent_mean * self.forecast_steps, 0.0
 
@@ -59,7 +60,6 @@ class SARIMAForecaster:
         """
         df = df.sort_values(by=["topic_id", "time_bucket"]).copy()
         forecast_vols = []
-        forecast_growths = []
         
         for topic_id, group in df.groupby("topic_id"):
             vols = group["topic_volume"].values
