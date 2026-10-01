@@ -11,6 +11,9 @@ from .visualizer import (
     plot_sarima_trajectory,
     plot_comprehensive_evaluation_grid,
     plot_learning_curves,
+    plot_threshold_optimization,
+    plot_trend_decay_curves,
+    plot_ablation_study,
 )
 from .pipeline import PredictionPipeline
 from .trend_duration import estimate_trend_duration_and_persistence
@@ -28,6 +31,9 @@ __all__ = [
     "plot_sarima_trajectory",
     "plot_comprehensive_evaluation_grid",
     "plot_learning_curves",
+    "plot_threshold_optimization",
+    "plot_trend_decay_curves",
+    "plot_ablation_study",
     "PredictionPipeline",
     "estimate_trend_duration_and_persistence",
 ]

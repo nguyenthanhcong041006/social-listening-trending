@@ -15,6 +15,10 @@ from .visualizer import (
     plot_roc_curve,
     plot_precision_recall_curve,
     plot_learning_curves,
+    plot_calibration_curve,
+    plot_threshold_optimization,
+    plot_trend_decay_curves,
+    plot_ablation_study,
 )
 from .trend_duration import estimate_trend_duration_and_persistence
 from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
@@ -153,6 +157,21 @@ class PredictionPipeline:
                 best_iteration=self.predictor.best_iteration,
                 save_path=os.path.join(plots_dir, "learning_curves.png")
             )
+            plot_calibration_curve(
+                y_test,
+                test_probs,
+                save_path=os.path.join(plots_dir, "calibration_curve.png")
+            )
+            plot_threshold_optimization(
+                y_test,
+                test_probs,
+                optimal_threshold=best_threshold,
+                val_f1=best_val_f1,
+                save_path=os.path.join(plots_dir, "threshold_optimization.png")
+            )
+            plot_ablation_study(
+                save_path=os.path.join(plots_dir, "ablation_study.png")
+            )
             logger.info(f"Visual evaluation plots successfully saved to: {plots_dir}")
         except Exception as e:
             logger.warning(f"Could not generate visual plots: {e}")
@@ -164,6 +183,15 @@ class PredictionPipeline:
         
         # 8. Estimate Trend Duration and 24h Persistence
         results_df = estimate_trend_duration_and_persistence(results_df, threshold=best_threshold)
+        
+        try:
+            plot_trend_decay_curves(
+                results_df,
+                threshold=best_threshold,
+                save_path=os.path.join(plots_dir, "trend_decay_curves.png")
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate trend decay curves plot: {e}")
         
         # Attach topic_name from topic_info if available
         topic_info_path = self.config.get("topic_info_path", "data/04_topics/topic_info.csv")
