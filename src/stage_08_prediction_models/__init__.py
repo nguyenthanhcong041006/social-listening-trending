@@ -10,8 +10,10 @@ from .visualizer import (
     plot_calibration_curve,
     plot_sarima_trajectory,
     plot_comprehensive_evaluation_grid,
+    plot_learning_curves,
 )
 from .pipeline import PredictionPipeline
+from .trend_duration import estimate_trend_duration_and_persistence
 
 __all__ = [
     "SARIMAForecaster",
@@ -25,5 +27,7 @@ __all__ = [
     "plot_calibration_curve",
     "plot_sarima_trajectory",
     "plot_comprehensive_evaluation_grid",
+    "plot_learning_curves",
     "PredictionPipeline",
+    "estimate_trend_duration_and_persistence",
 ]

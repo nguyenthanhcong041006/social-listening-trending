@@ -302,3 +302,76 @@ def plot_comprehensive_evaluation_grid(
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         logger.info(f"Saved Comprehensive Evaluation Grid to: {save_path}")
     return fig, axes
+
+
+def plot_learning_curves(
+    evals_result: dict,
+    best_iteration: Optional[int] = None,
+    save_path: Optional[str] = None
+):
+    """
+    Plots training, validation, and test learning curves across boosting iterations.
+    Visualizes:
+    1. Loss Curve (binary_logloss)
+    2. Discrimination Metric Curve (AUC)
+    """
+    if not evals_result:
+        logger.warning("Empty evals_result provided to plot_learning_curves.")
+        return None, None
+
+    # Colors and styles for partitions
+    styles = {
+        "train": {"color": "#1f77b4", "label": "Train", "linestyle": "-", "lw": 2.2},
+        "valid": {"color": "#ff7f0e", "label": "Validation", "linestyle": "--", "lw": 2.2},
+        "test": {"color": "#2ca02c", "label": "Test", "linestyle": "-.", "lw": 2.2}
+    }
+
+    # Find available metrics (e.g. binary_logloss, auc)
+    first_split = next(iter(evals_result.values()))
+    available_metrics = list(first_split.keys())
+
+    # Map friendly names
+    metric_titles = {
+        "binary_logloss": "Log Loss (Cross-Entropy)",
+        "auc": "ROC-AUC Score",
+        "binary_error": "Classification Error Rate"
+    }
+
+    num_metrics = min(2, len(available_metrics))
+    fig, axes = plt.subplots(1, num_metrics, figsize=(7 * num_metrics, 5.2), sharex=False)
+    if num_metrics == 1:
+        axes = [axes]
+
+    for ax, metric in zip(axes, available_metrics[:num_metrics]):
+        for split_name, split_metrics in evals_result.items():
+            if metric in split_metrics:
+                values = split_metrics[metric]
+                rounds = range(1, len(values) + 1)
+                st = styles.get(split_name, {"color": "black", "label": split_name, "linestyle": "-", "lw": 1.5})
+                ax.plot(rounds, values, label=st["label"], color=st["color"], linestyle=st["linestyle"], lw=st["lw"])
+
+        if best_iteration is not None and best_iteration > 0:
+            ax.axvline(
+                x=best_iteration,
+                color="#d62728",
+                linestyle=":",
+                lw=2.2,
+                label=f"Best Round ({best_iteration})"
+            )
+
+        title = metric_titles.get(metric, metric.replace("_", " ").title())
+        ax.set_title(f"Learning Curve: {title}", fontsize=12, fontweight="bold")
+        ax.set_xlabel("Boosting Iteration", fontsize=11)
+        ax.set_ylabel(title, fontsize=11)
+        ax.legend(loc="best", frameon=True)
+        ax.grid(True, linestyle="--", alpha=0.6)
+
+    fig.suptitle("Model Training, Validation & Test Trajectory", fontsize=14, y=1.02, fontweight="bold")
+    plt.tight_layout()
+
+    if save_path:
+        ensure_dir(save_path)
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        logger.info(f"Saved Learning Curves to: {save_path}")
+
+    return fig, axes

@@ -63,9 +63,18 @@ stage_02_preprocessing:
     preserve_negation: true # Protect negation context (prevent aggressive stopword stripping)
 
 # ------------------------------------------------------------------------------
-# Stage 3: Multilingual Representation & Sentiment Analysis (XLM-RoBERTa)
+# Stage 3: Multilingual Representation & Sentiment Analysis (Dual XLM-RoBERTa)
 # ------------------------------------------------------------------------------
 stage_03_multilingual_sentiment:
+  # Model 1: Fine-tuned XLM-RoBERTa for Contextual Sentence Embeddings (for BERTopic clustering)
+  # Uses semantic sentence representations (STS/contrastive objective) to separate topic spaces
+  embedding_model_name: "xlm-roberta-base" # or fine-tuned checkpoint: "models/xlm_roberta/embedding"
+  
+  # Model 2: Fine-tuned XLM-RoBERTa for Multilingual Sentiment Analysis
+  # Uses classification head to predict probabilities across [Negative, Neutral, Positive]
+  sentiment_model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment" # or checkpoint: "models/xlm_roberta/sentiment"
+
+  # Legacy fallback key
   model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment"
   max_length: 128
   batch_size: 64
@@ -134,7 +143,7 @@ stage_08_prediction_models:
     scaler: "standard" # "standard" or "minmax"
   lightgbm:
     objective: "binary"
-    metric: "auc"
+    metric: ["binary_logloss", "auc"]
     boosting_type: "gbdt"
     n_estimators: 200
     learning_rate: 0.05

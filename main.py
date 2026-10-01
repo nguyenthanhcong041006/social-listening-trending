@@ -1,6 +1,14 @@
 import argparse
+import os
 import sys
 from loguru import logger
+
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from configs.logging_config import setup_logger
 from src.utils.file_io import load_yaml
@@ -52,7 +60,6 @@ def main():
         sys.exit(0)
 
     # --------------------------------------------------------------------------
-    # --------------------------------------------------------------------------
     # Stage 1: Data Collection
     # --------------------------------------------------------------------------
     if args.all or args.stage == 1:
@@ -61,7 +68,6 @@ def main():
         collector = DataCollector(
             output_path=f"{paths.get('raw_data_dir', 'data/01_raw')}/raw_posts.parquet"
         )
-        import os
         default_inputs = [
             "data/01_raw/input_data.parquet",
             "data/01_raw/social_listening_30days.csv",
@@ -72,9 +78,8 @@ def main():
         try:
             collector.collect_from_file(input_file)
         except Exception as e:
-            logger.warning(f"Stage 1 input file '{input_file}' not found: {e}. Please supply data to proceed.")
-            if not args.all:
-                return
+            logger.error(f"Stage 1 input file '{input_file}' not found: {e}. Please supply raw data to proceed.")
+            return
 
     # --------------------------------------------------------------------------
     # Stage 2: Preprocessing Data

@@ -23,7 +23,7 @@ This repository provides a modular, production-grade machine learning pipeline d
 
 - **Live Multi-Domain Social Ingestion**: Collects 100% genuine posts from Reddit discussions and YouTube channels across 5 domains (Technology, Sports, Gaming, AI, Entertainment) spanning a strict 30-day temporal window with rich engagement metadata (text, timestamps, likes, shares, comments, hashtags, followers).
 - **Multi-Step Preprocessing Chain**: Deduplicates posts, filters spam bots, cleans markup/URLs, standardizes Unicode (NFKC) and casing, while preserving essential hashtags, sentiment emojis, and multilingual negation context (`not`, `no`, `never`, `không`, `chẳng`, `chưa`...).
-- **Multilingual Representation & Sentiment Polarity**: Employs **XLM-RoBERTa** (`cardiffnlp/twitter-xlm-roberta-base-sentiment`) to concurrently generate pooled contextual sentence embeddings (768-dim) and compute continuous sentiment polarity scores: $S = P(\text{positive}) - P(\text{negative}) \in [-1.0, 1.0]$.
+- **Dual Fine-Tuned Multilingual Encoders**: Employs two specialized **XLM-RoBERTa** models: one fine-tuned for semantic sentence embeddings (768-dim) to empower **BERTopic** topic clustering without emotional distortion, and one fine-tuned for multilingual 3-class sentiment polarity classification to compute continuous sentiment polarity scores: $S = P(\text{positive}) - P(\text{negative}) \in [-1.0, 1.0]$.
 - **Topic Discovery**: Dynamically identifies latent discussion themes and clusters social posts using **BERTopic** (UMAP dimensionality reduction + HDBSCAN density clustering + c-TF-IDF keyword extraction).
 - **Temporal Topic Tracking**: Aggregates discussion metrics over discrete time intervals (Topic Volume, Growth Rate, Weighted Engagement, Sentiment Change $\Delta S$, Hashtag Activity, Unique Users).
 - **Feature Engineering & Future Ground-Truth Labeling**: Builds comprehensive temporal feature vectors (including Acceleration, Lags 1–3, Rolling 3/7 moving averages) and assigns binary ground-truth target labels (`Trending = 1` vs `0`) based on future volume and growth thresholds over forward lookahead windows.
@@ -51,14 +51,14 @@ flowchart TD
     end
 
     %% Stage 3
-    subgraph S3["Stage 3: Multilingual Representation & Sentiment (XLM-RoBERTa)"]
+    subgraph S3["Stage 3: Multilingual Representation & Sentiment (Dual XLM-RoBERTa)"]
         direction TB
-        subgraph BranchA["Contextual Embeddings"]
-            E1["XLM-RoBERTa Encoder"] --> MP["Attention Mean Pooling"]
+        subgraph BranchA["Branch A: Topic Embeddings (BERTopic)"]
+            E1["XLM-RoBERTa Embedding Encoder<br/><i>(Fine-tuned for Semantic STS / Representation)</i>"] --> MP["Attention Mean Pooling & L2 Norm"]
             MP --> CSE["Contextual sentence embeddings (768-dim)"]
         end
-        subgraph BranchB["Sentiment Analysis"]
-            E2["XLM-RoBERTa Encoder"] --> SCH["Sentiment Classification Head<br/><i>(Pos / Neg / Neu probabilities)</i>"]
+        subgraph BranchB["Branch B: Sentiment Analysis"]
+            E2["XLM-RoBERTa Sentiment Classifier<br/><i>(Fine-tuned for 3-class Sentiment)</i>"] --> SCH["Sentiment Classification Head<br/><i>(Pos / Neg / Neu probabilities)</i>"]
             SCH --> SS["Sentiment Score<br/><b>S = P(positive) - P(negative)</b>"]
         end
     end
@@ -222,12 +222,15 @@ social_listening/
 ## 4. Detailed Breakdown of Pipeline Stages & Steps
 
 ### Stage 1: Data Collection & Ingestion
+
 - Standardizes common column aliases (`text`, `timestamp`, `likes`, `shares`, `comments`, `hashtags`, `followers`, `platform`, `topic_category`).
 - Validates data integrity using Pydantic's `RawPostSchema`, automatically dropping or flagging malformed rows.
 - Automatically persists raw validated batches into `data/01_raw/raw_posts.parquet`.
 
 ### Stage 2: Preprocessing Data
+
 Executes a strict 6-step sequential text processing chain:
+
 1. **Remove Duplicate**: Discards exact post duplicates and duplicate text hashes.
 2. **Remove Spam Bot**: Filters out bot accounts (under 5 followers, excessive hashtag stuffing $\ge 15$, or link spam $\ge 4$).
 3. **Text Cleaning**: Strips HTML tags and normalizes erratic line breaks and whitespaces.
@@ -235,19 +238,25 @@ Executes a strict 6-step sequential text processing chain:
 5. **Text Normalization**: Applies Unicode NFKC normalization, uniform lowercasing, and collapses elongated character repetitions (e.g., `sooooo` $\rightarrow$ `soo`).
 6. **Preserve Semantic Information**: Retains hashtags as contextual tokens, preserves sentiment-bearing emojis, and protects multilingual negation tokens (`not`, `no`, `never`, `cannot`, `without`, `không`, `chưa`, `chẳng`...) from aggressive stopword stripping.
 
-### Stage 3: Multilingual Representation & Sentiment Analysis (XLM-RoBERTa)
-- **Branch A (Contextual Sentence Embeddings)**: Passes normalized text through XLM-RoBERTa (`cardiffnlp/twitter-xlm-roberta-base-sentiment`) and executes **attention-masked Mean Pooling** over token hidden states to produce dense 768-dimensional sentence vectors saved to `sentence_embeddings.npy`.
-- **Branch B (Sentiment Analysis)**: Passes encoder outputs through the Sentiment Classification Head to calculate probabilities across 3 polarity classes (Positive, Negative, Neutral) and derives the continuous **Sentiment Score**:
+### Stage 3: Multilingual Representation & Sentiment Analysis (Dual XLM-RoBERTa)
+
+To prevent representation collapse (where sentiment-specialized models cluster text primarily by emotional polarity rather than semantic topics), Stage 3 isolates two dedicated fine-tuned models:
+
+- **Branch A (BERTopic Contextual Sentence Embeddings)**: Utilizes an **XLM-RoBERTa Embedding Encoder** fine-tuned for semantic textual representations / STS. Passes normalized text through the encoder, applying **attention-masked Mean Pooling** and **L2 Normalization** over token hidden states to produce dense 768-dimensional sentence vectors saved to `sentence_embeddings.npy` for BERTopic clustering.
+- **Branch B (Multilingual Sentiment Analysis)**: Employs an **XLM-RoBERTa Sentiment Classifier** fine-tuned on multilingual social sentiment benchmarks (`cardiffnlp/twitter-xlm-roberta-base-sentiment` or custom checkpoint). Passes outputs through the Sentiment Classification Head to compute 3-class probabilities (Positive, Negative, Neutral) and derives the continuous **Sentiment Score**:
   $$S = P(\text{positive}) - P(\text{negative}) \quad \in [-1.0, 1.0]$$
 
 ### Stage 4: Topic Detection (BERTopic)
+
 1. **Embeddings**: Ingests contextual sentence embeddings from Stage 3.
 2. **Clustering**: Non-linearly compresses embeddings using **UMAP** (5 components, cosine distance) followed by **HDBSCAN** density clustering to separate cohesive topic clusters from background noise (outliers, label `-1`).
 3. **Topic Representation**: Computes **Class-based TF-IDF (c-TF-IDF)** to extract key representative terms for each discovered topic.
 4. Outputs `data/04_topics/posts_with_topics.parquet` and fitted model to `models/bertopic/`.
 
 ### Stage 5: Topic Tracking Over Time
+
 Resamples posts into discrete temporal buckets (default: `1D` daily buckets), tracking 6 critical dimensions:
+
 - **Topic Volume ($V_t$)**: Total post count per time window.
 - **Growth Rate ($\text{Growth}_t$)**: Rate of volume change relative to the preceding window.
 - **Engagement**: Weighted sum of user interactions ($1.0 \times \text{Likes} + 2.0 \times \text{Shares} + 1.5 \times \text{Comments}$).
@@ -256,17 +265,20 @@ Resamples posts into discrete temporal buckets (default: `1D` daily buckets), tr
 - **Unique Users**: Count of unique accounts driving the conversation.
 
 ### Stage 6: Feature Engineering & Trend Labeling
+
 - **Feature Engineering**: Constructs feature vectors from the base tracking dimensions, extended with **Acceleration** (second derivative of Volume), multi-period lag indicators (**Lag-1, Lag-2, Lag-3**), and moving averages (**Rolling-3, Rolling-7**).
 - **Label Data**: Looks ahead over a forward horizon of $k=3$ periods:
   - Computes future aggregated volume (**Future Volume**) and future growth percentage (**Future Growth**).
   - Assigns ground-truth target: `Trending = 1` if both future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `Not Trending = 0`.
 
 ### Stage 7: Time-Based Data Splitting
+
 - Arranges all topic time-bucket records chronologically.
 - Divides data into: **Train (70%)**, **Validation (20%)**, and **Test (10%)**.
 - **Never shuffles temporal records** to strictly safeguard against future data leakage into training models.
 
 ### Stage 8: Prediction Models & Feature Fusion
+
 1. **Topic Volume Forecasting (SARIMA)**: Fits seasonal autoregressive time-series models (order `[1, 1, 1]`, seasonal order `[1, 1, 0, 7]`) on historical topic volume curves to forecast anticipated future volume.
 2. **Feature Fusion**: Merges present Social Listening features with prospective SARIMA forecast features into a unified **Combined Feature Vector**.
 3. **Trend Prediction (LightGBM)**: Trains a gradient boosting binary classifier optimized with Binary Logloss, automatically tunes the classification decision threshold on the Validation set, and evaluates on the Test set.
@@ -277,31 +289,38 @@ Resamples posts into discrete temporal buckets (default: `1D` daily buckets), tr
 ## 5. Core Mathematical Formulations & Algorithms
 
 ### 5.1. Attention-Masked Mean Pooling (Sentence Embeddings)
+
 Given token hidden state vector $\vec{h}_i$ and attention mask $m_i \in \{0, 1\}$ for sequence length $L$:
 $$\vec{e}_{\text{sentence}} = \frac{\sum_{i=1}^{L} (\vec{h}_i \cdot m_i)}{\sum_{i=1}^{L} m_i}$$
 
 ### 5.2. Continuous Sentiment Polarity Score
+
 Using Softmax classification probabilities:
 $$S = P(\text{positive}) - P(\text{negative}) \quad \in [-1.0, 1.0]$$
 
 ### 5.3. Class-Based TF-IDF (c-TF-IDF)
+
 Keyword weighting for term $t$ in topic cluster $c$:
 $$W_{t, c} = \|\text{tf}_{t, c}\| \times \log\left(1 + \frac{A}{\text{tf}_t}\right)$$
 Where:
+
 - $\text{tf}_{t, c}$: Frequency of word $t$ inside topic cluster $c$.
 - $\text{tf}_t$: Aggregate frequency of word $t$ across all corpus documents.
 - $A$: Average count of words per cluster ($\frac{1}{|C|} \sum_c \sum_t \text{tf}_{t, c}$).
 
 ### 5.4. Growth Rate & Acceleration
+
 - **Growth Rate**:
   $$\text{Growth}_t = \frac{V_t - V_{t-1}}{\max(V_{t-1}, 1)}$$
 - **Acceleration**:
   $$\text{Acceleration}_t = \text{Growth}_t - \text{Growth}_{t-1}$$
 
 ### 5.5. Weighted Engagement Score
+
 $$\text{Engagement} = w_{\text{likes}} \cdot \text{Likes} + w_{\text{shares}} \cdot \text{Shares} + w_{\text{comments}} \cdot \text{Comments}$$
 
 ### 5.6. SARIMA Time-Series Evaluation Metrics
+
 - **Mean Absolute Error (MAE)**:
   $$\text{MAE} = \frac{1}{N} \sum_{i=1}^{N} |y_i - \hat{y}_i|$$
 - **Root Mean Squared Error (RMSE)**:
@@ -309,11 +328,29 @@ $$\text{Engagement} = w_{\text{likes}} \cdot \text{Likes} + w_{\text{shares}} \c
 - **Symmetric Mean Absolute Percentage Error (sMAPE)**:
   $$\text{sMAPE} = \frac{100\%}{N} \sum_{i=1}^{N} \frac{2 \cdot |y_i - \hat{y}_i|}{|y_i| + |\hat{y}_i| + \epsilon}$$
 
+### 5.7. Trend Persistence & Lifespan Estimation (24h Outlook & Duration)
+
+To explicitly forecast **"whether a topic will still be trending after 24 hours"** and **"how long the trend will last"**, Stage 8 integrates a forward momentum inference module:
+
+- **24-Hour Persistence Probability ($P_{\text{trend}, 24h}$)**:
+  $$\text{Momentum}_{24h} = \sigma\left(1.5 \cdot \left(\text{Growth}_{24h} + 0.3 \cdot \text{Acceleration}\right)\right)$$
+  $$P_{\text{trend}, 24h} = \text{clip}\left(0.60 \cdot P_{\text{trend}} + 0.40 \cdot \text{Momentum}_{24h} \cdot P_{\text{trend}} \cdot 1.5, 0.01, 0.99\right)$$
+- **24-Hour Horizon Status (`trend_status_24h`)**:
+  - `Sustained Trending (> 24h)`: If $P_{\text{trend}} \ge \theta$ and $P_{\text{trend}, 24h} \ge \theta$.
+  - `Cooling Down (Trend ending in < 24h)`: If $P_{\text{trend}} \ge \theta$ but $P_{\text{trend}, 24h} < \theta$.
+  - `Emerging Potential (> 24h)`: If $P_{\text{trend}} < \theta$ but $P_{\text{trend}, 24h} \ge \theta$.
+  - `Normal (Not Trending)`: If $P_{\text{trend}} < \theta$ and $P_{\text{trend}, 24h} < \theta$.
+- **Estimated Duration & Lifespan Category (`estimated_duration_days` & `trend_lifespan`)**:
+  Derived from prediction margin above decision threshold combined with prospective SARIMA volume expansion:
+  $$D_{\text{days}} = 1.0 + 3.0 \cdot \left(\frac{P_{\text{trend}} - \theta}{\max(0.42 - \theta, 0.05)}\right) + 0.4 \cdot \max(\text{Growth}_{24h}, 0)$$
+  Classified into: `< 24h (Flash Trend)`, `1 - 2 Days (Short-term)`, `2 - 3 Days (Medium-term)`, or `>= 3 Days (Sustained)`.
+
 ---
 
 ## 6. .gitignore Policy (Media & Heavy Artifact Protection)
 
 The repository [.gitignore](file:///c:/Users/THANH%20CONG/Documents/social_listening/.gitignore) strictly enforces repository hygiene and storage constraints:
+
 - **Blocks all image formats**: `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.bmp`, `*.webp`, `*.tiff`, `*.svg`, `*.raw`, `*.psd`, `*.heic`, etc.
 - **Blocks all video formats**: `*.mp4`, `*.avi`, `*.mov`, `*.mkv`, `*.flv`, `*.wmv`, `*.webm`, `*.m4v`, etc.
 - **Blocks large datasets & artifacts**: All files under `data/*` and `models/*` (preserving empty folders via `.gitkeep`).
@@ -328,29 +365,34 @@ The repository [.gitignore](file:///c:/Users/THANH%20CONG/Documents/social_liste
 #### Step 1: Create and Activate Virtual Environment
 
 **On Windows (PowerShell):**
+
 ```powershell
 python -m venv venv
 .\venv\Scripts\activate
 ```
 
 **On Windows (Command Prompt):**
+
 ```cmd
 python -m venv venv
 venv\Scripts\activate.bat
 ```
 
 **On Linux / macOS:**
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
 #### Step 2: Install Package Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 #### Step 3: Register Jupyter Kernel (for Notebooks)
+
 ```bash
 python -m ipykernel install --user --name social_listening --display-name "Python (social_listening venv)"
 ```
@@ -368,11 +410,13 @@ The repository includes a production-grade live online crawler in [`scripts/craw
 5. **Entertainment**: The Oscars, Academy Awards, Best Picture race (`entertainment_oscars`)
 
 To crawl and refresh raw social discussions:
+
 ```bash
 python scripts/crawl_social_media_30days.py
 ```
 
 This generates and saves:
+
 - `data/01_raw/social_listening_30days.csv` (1,513+ verified posts)
 - `data/01_raw/social_listening_dataset.csv`
 - `data/01_raw/input_data.parquet`
@@ -388,11 +432,13 @@ All hyperparameters, file paths, model configurations, and thresholds are centra
 ### 7.4. Running the Pipeline via CLI
 
 #### Complete End-to-End Execution (Stages 1 through 8):
+
 ```bash
 python main.py --all
 ```
 
 #### Running Individual Stages Specifically:
+
 ```bash
 # Stage 1: Data Collection & Schema Validation
 # Automatically searches data/01_raw/input_data.parquet or social_listening_30days.csv
@@ -424,6 +470,7 @@ python main.py --stage 8
 ```
 
 #### Output Artifacts & Inspection:
+
 - **Ranked Predicted Trending Topics**: `data/08_predictions/predicted_trending_topics.csv`
 - **Full Test Predictions**: `data/08_predictions/all_test_predictions.parquet`
 - **Numerical Evaluation Metrics**: `data/08_predictions/evaluation_metrics.json`
@@ -434,6 +481,7 @@ python main.py --stage 8
   - `roc_curve.png`: Receiver Operating Characteristic curve with AUC score
   - `precision_recall_curve.png`: Precision-Recall curve with Average Precision (AP)
   - `feature_importance.png`: Feature gain bar chart (Social Listening vs SARIMA features)
+  - `learning_curves.png`: Training, Validation, and Test learning curves (Log Loss & ROC-AUC) across boosting rounds
 
 ---
 
@@ -441,14 +489,15 @@ python main.py --stage 8
 
 All notebooks in [`notebooks/`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks) are pre-configured to use the project kernel **`Python (social_listening venv)`**:
 
-| Notebook | Focus & Stages | Description |
-|---|---|---|
-| [`01_data_exploration_and_preprocessing.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/01_data_exploration_and_preprocessing.ipynb) | **Stages 1 & 2** | Step-by-step raw data exploration, schema ingestion (`DataCollector`), deduplication (`remove_duplicates`), spam filtering (`filter_spam_and_bots`), text cleaning (`clean_text`), NFKC normalization (`normalize_text`), and semantic preservation (`preserve_semantic_information`). |
-| [`02_topic_modeling_bertopic.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/02_topic_modeling_bertopic.ipynb) | **Stages 3 & 4** | Multilingual sentence representation via XLM-RoBERTa, sentiment score distribution, and BERTopic clustering analysis (UMAP + HDBSCAN + c-TF-IDF). |
-| [`03_trend_prediction_evaluation.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/03_trend_prediction_evaluation.ipynb) | **Stages 5 to 8** | Topic metrics tracking over time, feature matrix construction, chronological split, SARIMA forecasting, LightGBM classification, and publication-grade evaluation curves. |
-| [`04_model_evaluation_and_visualization.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and SARIMA trajectory plots. |
+| Notebook                                                                                                                                                        | Focus & Stages       | Description                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`01_data_exploration_and_preprocessing.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/01_data_exploration_and_preprocessing.ipynb) | **Stages 1 & 2**     | Step-by-step raw data exploration, schema ingestion (`DataCollector`), deduplication (`remove_duplicates`), spam filtering (`filter_spam_and_bots`), text cleaning (`clean_text`), NFKC normalization (`normalize_text`), and semantic preservation (`preserve_semantic_information`). |
+| [`02_topic_modeling_bertopic.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/02_topic_modeling_bertopic.ipynb)                       | **Stages 3 & 4**     | Multilingual sentence representation via XLM-RoBERTa, sentiment score distribution, and BERTopic clustering analysis (UMAP + HDBSCAN + c-TF-IDF).                                                                                                                                      |
+| [`03_trend_prediction_evaluation.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/03_trend_prediction_evaluation.ipynb)               | **Stages 5 to 8**    | Topic metrics tracking over time, feature matrix construction, chronological split, SARIMA forecasting, LightGBM classification, and publication-grade evaluation curves.                                                                                                              |
+| [`04_model_evaluation_and_visualization.ipynb`](file:///c:/Users/THANH%20CONG/Documents/social_listening/notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and SARIMA trajectory plots.                                                                          |
 
 ### Selecting the Kernel in VS Code / IDE:
+
 1. Open any `.ipynb` file in VS Code.
 2. In the top-right corner of the notebook editor, click **Select Kernel** $\rightarrow$ **Python Environments...**
 3. Select **`Python (social_listening venv)`** (or `./venv/Scripts/python.exe`).

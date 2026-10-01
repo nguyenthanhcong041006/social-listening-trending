@@ -18,7 +18,7 @@ class LightGBMTrendPredictor:
         self.config = config or {}
         self.params = {
             "objective": self.config.get("objective", "binary"),
-            "metric": self.config.get("metric", "auc"),
+            "metric": self.config.get("metric", ["binary_logloss", "auc"]),
             "boosting_type": self.config.get("boosting_type", "gbdt"),
             "learning_rate": self.config.get("learning_rate", 0.05),
             "num_leaves": self.config.get("num_leaves", 31),
@@ -30,6 +30,8 @@ class LightGBMTrendPredictor:
         self.n_estimators = self.config.get("n_estimators", 200)
         self.model = None
         self.feature_names = []
+        self.evals_result = {}
+        self.best_iteration = 0
 
     def train(
         self,
@@ -37,9 +39,11 @@ class LightGBMTrendPredictor:
         y_train: np.ndarray,
         X_valid: np.ndarray = None,
         y_valid: np.ndarray = None,
+        X_test: np.ndarray = None,
+        y_test: np.ndarray = None,
         feature_names: List[str] = None
     ):
-        """Trains LightGBM model with validation-set early stopping."""
+        """Trains LightGBM model with validation-set early stopping and tracks train/valid/test learning curves."""
         self.feature_names = feature_names or [f"feat_{i}" for i in range(X_train.shape[1])]
         
         # Class imbalance handling per PDF Section 11.3
@@ -62,8 +66,18 @@ class LightGBMTrendPredictor:
             valid_data = lgb.Dataset(X_valid, label=y_valid, reference=train_data, feature_name=self.feature_names)
             valid_sets.append(valid_data)
             valid_names.append("valid")
+
+        if X_test is not None and y_test is not None:
+            test_data = lgb.Dataset(X_test, label=y_test, reference=train_data, feature_name=self.feature_names)
+            valid_sets.append(test_data)
+            valid_names.append("test")
             
-        callbacks = [lgb.early_stopping(stopping_rounds=20, verbose=False), lgb.log_evaluation(period=0)]
+        self.evals_result = {}
+        callbacks = [
+            lgb.early_stopping(stopping_rounds=20, verbose=False),
+            lgb.record_evaluation(self.evals_result),
+            lgb.log_evaluation(period=0)
+        ]
         
         logger.info(f"Training LightGBM model on {X_train.shape[0]} samples with {X_train.shape[1]} features...")
         self.model = lgb.train(
@@ -74,7 +88,8 @@ class LightGBMTrendPredictor:
             valid_names=valid_names,
             callbacks=callbacks
         )
-        logger.info("LightGBM model training completed.")
+        self.best_iteration = int(getattr(self.model, "best_iteration", 0))
+        logger.info(f"LightGBM training completed (Best Iteration: {self.best_iteration}).")
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predicts probability of class Trending = 1."""

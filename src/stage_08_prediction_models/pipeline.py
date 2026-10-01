@@ -14,7 +14,9 @@ from .visualizer import (
     plot_confusion_matrix,
     plot_roc_curve,
     plot_precision_recall_curve,
+    plot_learning_curves,
 )
+from .trend_duration import estimate_trend_duration_and_persistence
 from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
 from src.utils.metrics_utils import compute_mae, compute_rmse, compute_smape
 
@@ -65,8 +67,16 @@ class PredictionPipeline:
         X_test, _ = self.fusion.fuse(test_df_fc, is_training=False)
         y_test = test_df_fc["is_trending"].values
         
-        # 3. Train Trend Prediction (LightGBM)
-        self.predictor.train(X_train, y_train, X_valid, y_valid, feature_names=feature_cols)
+        # 3. Train Trend Prediction (LightGBM) with Train, Valid, and Test curves
+        self.predictor.train(
+            X_train,
+            y_train,
+            X_valid=X_valid,
+            y_valid=y_valid,
+            X_test=X_test,
+            y_test=y_test,
+            feature_names=feature_cols
+        )
         
         # 4. Tune decision threshold on Validation set (PDF Section 10)
         valid_probs = self.predictor.predict_proba(X_valid)
@@ -88,6 +98,7 @@ class PredictionPipeline:
         metrics = evaluate_trend_predictions(y_test, test_preds, test_probs)
         metrics["optimal_threshold"] = best_threshold
         metrics["val_f1"] = float(best_val_f1)
+        metrics["best_iteration"] = int(self.predictor.best_iteration)
         
         if "future_volume" in test_df_fc.columns and "sarima_forecast_volume" in test_df_fc.columns:
             y_true_vol = test_df_fc["future_volume"].values
@@ -137,6 +148,11 @@ class PredictionPipeline:
                 feature_importance_df,
                 save_path=os.path.join(plots_dir, "feature_importance.png")
             )
+            plot_learning_curves(
+                self.predictor.evals_result,
+                best_iteration=self.predictor.best_iteration,
+                save_path=os.path.join(plots_dir, "learning_curves.png")
+            )
             logger.info(f"Visual evaluation plots successfully saved to: {plots_dir}")
         except Exception as e:
             logger.warning(f"Could not generate visual plots: {e}")
@@ -145,6 +161,25 @@ class PredictionPipeline:
         results_df = test_df_fc.copy()
         results_df["predicted_trending"] = test_preds
         results_df["trending_probability"] = test_probs
+        
+        # 8. Estimate Trend Duration and 24h Persistence
+        results_df = estimate_trend_duration_and_persistence(results_df, threshold=best_threshold)
+        
+        # Attach topic_name from topic_info if available
+        topic_info_path = self.config.get("topic_info_path", "data/04_topics/topic_info.csv")
+        if os.path.exists(topic_info_path):
+            try:
+                topic_info = pd.read_csv(topic_info_path)
+                name_col = "Name" if "Name" in topic_info.columns else ("topic_name" if "topic_name" in topic_info.columns else None)
+                id_col = "Topic" if "Topic" in topic_info.columns else ("topic_id" if "topic_id" in topic_info.columns else None)
+                if name_col and id_col:
+                    name_map = dict(zip(topic_info[id_col], topic_info[name_col]))
+                    results_df["topic_name"] = results_df["topic_id"].map(name_map).fillna("Topic_" + results_df["topic_id"].astype(str))
+            except Exception as e:
+                logger.warning(f"Could not map topic_name from {topic_info_path}: {e}")
+        
+        if "topic_name" not in results_df.columns and "topic_id" in results_df.columns:
+            results_df["topic_name"] = "Topic_" + results_df["topic_id"].astype(str)
         
         # Save prediction results
         ensure_dir(os.path.join(self.predictions_dir, "predicted_trending_topics.csv"))
@@ -162,6 +197,10 @@ class PredictionPipeline:
         metrics_path = os.path.join(self.predictions_dir, "evaluation_metrics.json")
         with open(metrics_path, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=4)
+
+        history_path = os.path.join(self.predictions_dir, "training_history.json")
+        with open(history_path, "w", encoding="utf-8") as f:
+            json.dump(self.predictor.evals_result, f, indent=4)
             
         logger.info(f"Stage 8 completed! Ranked trending topics saved to: {os.path.join(self.predictions_dir, 'predicted_trending_topics.csv')}")
         return trending_topics
