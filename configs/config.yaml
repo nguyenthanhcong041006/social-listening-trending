@@ -135,10 +135,20 @@ stage_07_time_based_split:
 # Stage 8: Prediction Models & Feature Fusion
 # ------------------------------------------------------------------------------
 stage_08_prediction_models:
+  compare_models: true # Enables 4-way research benchmark: SARIMA/SARIMAX + LightGBM/XGBoost
   sarima:
     order: [1, 1, 1]          # (p, d, q)
     seasonal_order: [1, 1, 0, 7] # (P, D, Q, s) - weekly seasonality
     forecast_steps: 3
+  sarimax:
+    order: [1, 1, 1]
+    seasonal_order: [1, 1, 0, 7]
+    forecast_steps: 3
+    exog_cols:
+      - "engagement"
+      - "avg_sentiment"
+      - "hashtag_activity"
+      - "unique_users"
   feature_fusion:
     scaler: "standard" # "standard" or "minmax"
   lightgbm:
@@ -152,3 +162,12 @@ stage_08_prediction_models:
     feature_fraction: 0.8
     auto_class_weights: true
     verbose: -1
+  xgboost:
+    n_estimators: 200
+    learning_rate: 0.05
+    max_depth: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 20
+    auto_class_weights: true
+

@@ -149,7 +149,7 @@ def main():
     # Stage 8: Prediction Models & Feature Fusion
     # --------------------------------------------------------------------------
     if args.all or args.stage == 8:
-        logger.info("\n>>> [STAGE 8] PREDICTION MODELS (SARIMA + FUSION + LIGHTGBM)")
+        logger.info("\n>>> [STAGE 8] PREDICTION MODELS & BENCHMARKING (SARIMA/SARIMAX + LIGHTGBM/XGBOOST)")
         from src.stage_08_prediction_models import PredictionPipeline
         predictor = PredictionPipeline(config.get("stage_08_prediction_models", {}))
         splits_dir = paths.get("splits_dir", "data/07_splits")

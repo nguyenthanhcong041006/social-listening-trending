@@ -2,7 +2,7 @@ import pandas as pd
 from typing import List, Dict, Any
 from loguru import logger
 from .schema import RawPostSchema
-from src.utils.file_io import save_dataframe, load_dataframe
+from src.utils.file_io import save_dataframe, load_dataframe, resolve_path, resolve_output_path
 
 # Standard alias map for common social media column variations
 COLUMN_ALIASES = {
@@ -77,7 +77,7 @@ class DataCollector:
     """
 
     def __init__(self, output_path: str = "data/01_raw/raw_social_posts.parquet"):
-        self.output_path = output_path
+        self.output_path = resolve_output_path(output_path)
 
     def validate_and_ingest(self, raw_records: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -100,8 +100,9 @@ class DataCollector:
 
     def collect_from_file(self, input_file_path: str) -> pd.DataFrame:
         """Loads data from a source file (CSV/JSON), standardizes columns, and validates schema."""
-        logger.info(f"Collecting data from input file: {input_file_path}")
-        raw_df = load_dataframe(input_file_path)
+        resolved_path = resolve_path(input_file_path)
+        logger.info(f"Collecting data from input file: {resolved_path}")
+        raw_df = load_dataframe(resolved_path)
         
         # Standardize column variations
         standardized_df = standardize_columns(raw_df)

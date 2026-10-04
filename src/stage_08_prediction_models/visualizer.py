@@ -24,6 +24,25 @@ plt.rcParams.update({
     "figure.titlesize": 15,
 })
 
+def safe_savefig(fig_or_plt, save_path: Optional[str], dpi: int = 300, **kwargs):
+    """
+    Safely saves a matplotlib figure to disk with directory creation and locked file protection.
+    Prevents Bad file descriptor / PermissionError crashes on Windows when image files are open in viewers.
+    """
+    if not save_path:
+        return
+    try:
+        ensure_dir(save_path)
+        if hasattr(fig_or_plt, 'savefig'):
+            fig_or_plt.savefig(save_path, dpi=dpi, bbox_inches="tight", **kwargs)
+        else:
+            plt.savefig(save_path, dpi=dpi, bbox_inches="tight", **kwargs)
+        logger.info(f"Saved figure to: {save_path}")
+    except Exception as e:
+        logger.warning(f"Unable to save figure to '{save_path}' (file may be locked/open by another process): {e}")
+
+
+
 def plot_confusion_matrix(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -58,10 +77,7 @@ def plot_confusion_matrix(
     ax.set_xlabel("Predicted Model Label")
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Confusion Matrix plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_roc_curve(
@@ -87,10 +103,7 @@ def plot_roc_curve(
     ax.legend(loc="lower right", frameon=True)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved ROC Curve plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_precision_recall_curve(
@@ -118,10 +131,7 @@ def plot_precision_recall_curve(
     ax.legend(loc="upper right", frameon=True)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Precision-Recall Curve to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_feature_importance(
@@ -157,10 +167,7 @@ def plot_feature_importance(
     ax.legend(title="Feature Stream", loc="lower right", frameon=True)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Feature Importance plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_calibration_curve(
@@ -187,10 +194,7 @@ def plot_calibration_curve(
     ax.legend(loc="upper left", frameon=True)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Calibration Curve to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_sarima_trajectory(
@@ -215,10 +219,7 @@ def plot_sarima_trajectory(
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved SARIMA Trajectory plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
 def plot_comprehensive_evaluation_grid(
@@ -297,10 +298,7 @@ def plot_comprehensive_evaluation_grid(
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.96])
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Comprehensive Evaluation Grid to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
     return fig, axes
 
 
@@ -369,10 +367,7 @@ def plot_learning_curves(
     fig.suptitle("Model Training, Validation & Test Trajectory", fontsize=14, y=1.02, fontweight="bold")
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Learning Curves to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
 
     return fig, axes
 
@@ -432,10 +427,7 @@ def plot_threshold_optimization(
     ax.grid(True, linestyle="--", alpha=0.6)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Threshold Optimization plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
 
     return fig, ax
 
@@ -506,10 +498,7 @@ def plot_trend_decay_curves(
     ax.grid(True, linestyle="--", alpha=0.6)
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Trend Decay Curves to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
 
     return fig, ax
 
@@ -571,10 +560,435 @@ def plot_ablation_study(
     ax.grid(True, linestyle="--", alpha=0.5, axis="y")
     plt.tight_layout()
 
-    if save_path:
-        ensure_dir(save_path)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        logger.info(f"Saved Ablation Study plot to: {save_path}")
+    safe_savefig(plt, save_path, dpi=300)
 
     return fig, ax
+
+
+# ==============================================================================
+# Model Comparison & Research Benchmarking Visualizations
+# (SARIMA vs SARIMAX with LightGBM vs XGBoost)
+# ==============================================================================
+
+MODEL_COLORS = {
+    "SARIMA + LightGBM": "#1f77b4",   # Deep Blue (Baseline)
+    "SARIMAX + LightGBM": "#2ca02c",  # Green
+    "SARIMA + XGBoost": "#ff7f0e",   # Orange
+    "SARIMAX + XGBoost": "#9467bd",  # Purple
+}
+
+MODEL_LINESTYLES = {
+    "SARIMA + LightGBM": "-",
+    "SARIMAX + LightGBM": "-.",
+    "SARIMA + XGBoost": "--",
+    "SARIMAX + XGBoost": ":"
+}
+
+def plot_model_comparison_roc(
+    models_predictions: dict,
+    y_true: np.ndarray,
+    save_path: Optional[str] = None
+):
+    """
+    Plots multi-model ROC Curves on a single axis for direct academic comparison.
+    models_predictions: dict of {model_name: y_prob}
+    """
+    fig, ax = plt.subplots(figsize=(7.5, 6.2))
+    
+    for name, y_prob in models_predictions.items():
+        fpr, tpr, _ = roc_curve(y_true, y_prob)
+        roc_auc = auc(fpr, tpr)
+        color = MODEL_COLORS.get(name, "#333333")
+        ls = MODEL_LINESTYLES.get(name, "-")
+        ax.plot(fpr, tpr, color=color, linestyle=ls, lw=2.4, label=f"{name} (AUC = {roc_auc:.3f})")
+
+    ax.plot([0, 1], [0, 1], color="#888888", lw=1.5, linestyle="--", label="Random Classifier (AUC = 0.500)")
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel("False Positive Rate (1 - Specificity)", fontsize=11, fontweight="bold")
+    ax.set_ylabel("True Positive Rate (Sensitivity / Recall)", fontsize=11, fontweight="bold")
+    ax.set_title("Comparative ROC Curves Across Trend Prediction Models", fontsize=13, fontweight="bold")
+    ax.legend(loc="lower right", frameon=True, fontsize=10)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, ax
+
+
+def plot_model_comparison_pr(
+    models_predictions: dict,
+    y_true: np.ndarray,
+    save_path: Optional[str] = None
+):
+    """
+    Plots multi-model Precision-Recall Curves on a single axis.
+    Crucial for imbalanced social media trend detection tasks.
+    models_predictions: dict of {model_name: y_prob}
+    """
+    fig, ax = plt.subplots(figsize=(7.5, 6.2))
+    baseline = float(np.mean(y_true))
+
+    for name, y_prob in models_predictions.items():
+        prec, rec, _ = precision_recall_curve(y_true, y_prob)
+        ap = average_precision_score(y_true, y_prob)
+        color = MODEL_COLORS.get(name, "#333333")
+        ls = MODEL_LINESTYLES.get(name, "-")
+        ax.plot(rec, prec, color=color, linestyle=ls, lw=2.4, label=f"{name} (AP = {ap:.3f})")
+
+    ax.axhline(y=baseline, color="#888888", lw=1.5, linestyle="--", label=f"Prevalence Baseline ({baseline:.1%})")
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel("Recall (Detection Rate)", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Precision (Positive Predictive Value)", fontsize=11, fontweight="bold")
+    ax.set_title("Comparative Precision-Recall Curves (Trend Detection)", fontsize=13, fontweight="bold")
+    ax.legend(loc="upper right", frameon=True, fontsize=10)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, ax
+
+
+def plot_model_comparison_barchart(
+    comparison_df: pd.DataFrame,
+    save_path: Optional[str] = None
+):
+    """
+    Grouped Bar Chart comparing core research metrics across all model candidates:
+    [Macro-F1, F1-Score, Precision, Recall, ROC-AUC, PR-AUC, MCC]
+    """
+    metrics = ["macro_f1", "f1_score", "precision", "recall", "roc_auc", "pr_auc", "mcc"]
+    metric_labels = ["Macro-F1", "F1 (Trend)", "Precision", "Recall", "ROC-AUC", "PR-AUC", "MCC"]
+    
+    # Filter available metrics
+    available_metrics = [m for m in metrics if m in comparison_df.columns]
+    labels = [metric_labels[metrics.index(m)] for m in available_metrics]
+    
+    n_models = len(comparison_df)
+    n_metrics = len(available_metrics)
+    
+    fig, ax = plt.subplots(figsize=(12, 6.2))
+    x = np.arange(n_metrics)
+    total_width = 0.8
+    bar_width = total_width / n_models
+
+    for idx, (_, row) in enumerate(comparison_df.iterrows()):
+        model_name = row["model_name"]
+        color = MODEL_COLORS.get(model_name, "#4c72b0")
+        offset = (idx - (n_models - 1) / 2) * bar_width
+        vals = [row[m] for m in available_metrics]
+        
+        bars = ax.bar(x + offset, vals, width=bar_width, label=model_name, color=color, alpha=0.90)
+        for b in bars:
+            h = b.get_height()
+            if not np.isnan(h) and h != 0:
+                ax.annotate(
+                    f"{h:.2f}",
+                    xy=(b.get_x() + b.get_width() / 2, h),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold"
+                )
+
+    ax.set_title("Benchmark Comparison Across Evaluation Metrics", fontsize=14, fontweight="bold")
+    ax.set_ylabel("Score", fontsize=11, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=11, fontweight="bold")
+    ax.set_ylim([0.0, 1.05])
+    ax.legend(loc="upper left", frameon=True, ncol=2, fontsize=10)
+    ax.grid(True, linestyle="--", alpha=0.5, axis="y")
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, ax
+
+
+def plot_model_comparison_radar(
+    comparison_df: pd.DataFrame,
+    save_path: Optional[str] = None
+):
+    """
+    Plots a multi-dimensional Spider / Radar chart comparing trade-offs between model variants.
+    """
+    categories = ["Macro-F1", "F1", "Precision", "Recall", "ROC-AUC", "PR-AUC", "MCC"]
+    col_map = {
+        "Macro-F1": "macro_f1",
+        "F1": "f1_score",
+        "Precision": "precision",
+        "Recall": "recall",
+        "ROC-AUC": "roc_auc",
+        "PR-AUC": "pr_auc",
+        "MCC": "mcc"
+    }
+
+    # Verify columns exist
+    valid_cats = [c for c in categories if col_map[c] in comparison_df.columns]
+    N = len(valid_cats)
+    if N < 3:
+        logger.warning("Not enough valid metrics for Radar chart.")
+        return None, None
+
+    angles = [n / float(N) * 2 * np.pi for n in range(N)]
+    angles += angles[:1]
+
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), subplot_kw=dict(polar=True))
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    
+    plt.xticks(angles[:-1], valid_cats, fontsize=10, fontweight="bold")
+    ax.set_rlabel_position(0)
+    plt.yticks([0.2, 0.4, 0.6, 0.8, 1.0], ["0.2", "0.4", "0.6", "0.8", "1.0"], color="grey", size=8)
+    plt.ylim(0, 1.05)
+
+    for _, row in comparison_df.iterrows():
+        name = row["model_name"]
+        color = MODEL_COLORS.get(name, "#1f77b4")
+        values = [max(0.0, float(row[col_map[c]])) for c in valid_cats]
+        values += values[:1]
+        ax.plot(angles, values, lw=2.2, label=name, color=color)
+        ax.fill(angles, values, color=color, alpha=0.12)
+
+    ax.set_title("Multi-Dimensional Performance Profiles (Radar Chart)", size=13, fontweight="bold", y=1.08)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1), frameon=True, fontsize=9.5)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, ax
+
+
+def plot_sarima_vs_sarimax_comparison(
+    ts_metrics_df: pd.DataFrame,
+    save_path: Optional[str] = None
+):
+    """
+    Compares Time-Series volume forecasting error between Univariate SARIMA and Exogenous SARIMAX:
+    - MAE (Mean Absolute Error)
+    - RMSE (Root Mean Squared Error)
+    - sMAPE (Symmetric Mean Absolute Percentage Error)
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+    metrics_info = [
+        ("mae", "MAE (Lower is Better)", "#1f77b4"),
+        ("rmse", "RMSE (Lower is Better)", "#d62728"),
+        ("smape", "sMAPE % (Lower is Better)", "#2ca02c")
+    ]
+
+    for ax, (m_col, m_title, default_color) in zip(axes, metrics_info):
+        if m_col in ts_metrics_df.columns:
+            bars = ax.bar(
+                ts_metrics_df["forecaster"],
+                ts_metrics_df[m_col],
+                color=["#3182bd", "#31a354"],
+                width=0.45,
+                alpha=0.88,
+                edgecolor="black"
+            )
+            for b in bars:
+                h = b.get_height()
+                ax.annotate(
+                    f"{h:.2f}" + ("%" if "smape" in m_col else ""),
+                    xy=(b.get_x() + b.get_width() / 2, h),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    fontsize=9.5
+                )
+            ax.set_title(m_title, fontsize=11, fontweight="bold")
+            ax.set_ylabel("Value", fontsize=10)
+            ax.grid(True, linestyle="--", alpha=0.5, axis="y")
+
+    fig.suptitle("Topic Volume Forecasting Accuracy: SARIMA vs. SARIMAX", fontsize=13, fontweight="bold", y=1.02)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, axes
+
+
+def plot_model_comparison_confusion_matrices(
+    models_preds: dict,
+    y_true: np.ndarray,
+    save_path: Optional[str] = None
+):
+    """
+    Plots a 2x2 grid of confusion matrices for direct side-by-side error inspection:
+    [SARIMA + LightGBM, SARIMAX + LightGBM, SARIMA + XGBoost, SARIMAX + XGBoost]
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(11, 9.5))
+    axes = axes.flatten()
+
+    for idx, (name, y_pred) in enumerate(models_preds.items()):
+        if idx >= 4:
+            break
+        ax = axes[idx]
+        cm = confusion_matrix(y_true, y_pred)
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=["Not Trending", "Trending"],
+            yticklabels=["Not Trending", "Trending"],
+            ax=ax,
+            cbar=False
+        )
+        ax.set_title(f"{name}", fontsize=11, fontweight="bold")
+        ax.set_xlabel("Predicted Label", fontsize=10)
+        ax.set_ylabel("True Label", fontsize=10)
+
+    fig.suptitle("Comparative Confusion Matrices (Test Set)", fontsize=14, fontweight="bold", y=0.99)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, axes
+
+
+def plot_model_comparison_calibration(
+    models_predictions: dict,
+    y_true: np.ndarray,
+    n_bins: int = 8,
+    save_path: Optional[str] = None
+):
+    """
+    Overlays probability calibration curves (Reliability Diagrams) for all models.
+    """
+    fig, ax = plt.subplots(figsize=(7.5, 6))
+    ax.plot([0, 1], [0, 1], linestyle="--", color="#888888", label="Perfect Calibration")
+
+    for name, y_prob in models_predictions.items():
+        prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=n_bins, strategy="uniform")
+        color = MODEL_COLORS.get(name, "#1f77b4")
+        ls = MODEL_LINESTYLES.get(name, "-")
+        ax.plot(prob_pred, prob_true, marker="o", lw=2, color=color, linestyle=ls, label=name)
+
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.0])
+    ax.set_xlabel("Mean Predicted Probability", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Observed Fraction of Positives", fontsize=11, fontweight="bold")
+    ax.set_title("Probability Calibration (Reliability Diagram) Comparison", fontsize=13, fontweight="bold")
+    ax.legend(loc="upper left", frameon=True, fontsize=9.5)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+
+    safe_savefig(plt, save_path, dpi=300)
+
+    return fig, ax
+
+
+def export_model_comparison_table(
+    comparison_df: pd.DataFrame,
+    save_dir: str
+):
+    """
+    Exports clean, publication-ready benchmark tables:
+    1. CSV file: model_comparison_results.csv
+    2. LaTeX code: model_comparison_table.tex (ready to paste into research papers)
+    3. Rendered Graphic Table: model_comparison_table.png
+    """
+    ensure_dir(os.path.join(save_dir, ".gitkeep"))
+
+    # 1. Save CSV
+    csv_path = os.path.join(save_dir, "model_comparison_results.csv")
+    comparison_df.to_csv(csv_path, index=False)
+    logger.info(f"Saved comparison CSV to: {csv_path}")
+
+    # 2. Generate LaTeX Table
+    latex_path = os.path.join(save_dir, "model_comparison_table.tex")
+    core_cols = ["model_name", "macro_f1", "f1_score", "precision", "recall", "roc_auc", "pr_auc", "mcc", "optimal_threshold"]
+    valid_cols = [c for c in core_cols if c in comparison_df.columns]
+    
+    latex_df = comparison_df[valid_cols].copy()
+    latex_df.columns = [c.replace("_", " ").title() for c in valid_cols]
+
+    latex_code = [
+        "\\begin{table}[htbp]",
+        "\\centering",
+        "\\caption{Comprehensive Performance Comparison of Hybrid Trend Prediction Frameworks}",
+        "\\label{tab:model_comparison}",
+        "\\resizebox{\\textwidth}{!}{",
+        "\\begin{tabular}{l" + "c" * (len(valid_cols) - 1) + "}",
+        "\\hline\\hline",
+        " & ".join(latex_df.columns) + " \\\\",
+        "\\hline"
+    ]
+
+    for _, row in latex_df.iterrows():
+        row_str = []
+        for col in latex_df.columns:
+            val = row[col]
+            if isinstance(val, (int, float)):
+                row_str.append(f"{val:.4f}")
+            else:
+                row_str.append(str(val))
+        latex_code.append(" & ".join(row_str) + " \\\\")
+
+    latex_code.extend([
+        "\\hline\\hline",
+        "\\end{tabular}",
+        "}",
+        "\\end{table}"
+    ])
+
+    with open(latex_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(latex_code))
+    logger.info(f"Saved publication LaTeX table to: {latex_path}")
+
+    # 3. Render High-Resolution Graphic Table
+    fig, ax = plt.subplots(figsize=(11, 2.5 + 0.45 * len(comparison_df)))
+    ax.axis("off")
+    ax.axis("tight")
+
+    render_data = []
+    display_cols = ["Model", "Macro-F1", "F1", "Precision", "Recall", "ROC-AUC", "PR-AUC", "MCC", "Opt. Thresh (θ*)"]
+    
+    for _, row in comparison_df.iterrows():
+        render_data.append([
+            row.get("model_name", "N/A"),
+            f"{row.get('macro_f1', 0):.4f}",
+            f"{row.get('f1_score', 0):.4f}",
+            f"{row.get('precision', 0):.4f}",
+            f"{row.get('recall', 0):.4f}",
+            f"{row.get('roc_auc', 0):.4f}",
+            f"{row.get('pr_auc', 0):.4f}",
+            f"{row.get('mcc', 0):.4f}",
+            f"{row.get('optimal_threshold', 0.5):.3f}"
+        ])
+
+    table = ax.table(
+        cellText=render_data,
+        colLabels=display_cols,
+        cellLoc="center",
+        loc="center"
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.15, 1.6)
+
+    # Style header
+    for (i, j), cell in table.get_celld().items():
+        if i == 0:
+            cell.set_text_props(weight="bold", color="white")
+            cell.set_facecolor("#2b5c8f")
+        else:
+            if i % 2 == 0:
+                cell.set_facecolor("#f2f5f9")
+            else:
+                cell.set_facecolor("#ffffff")
+
+    plt.title("Comparative Performance Benchmark: Emerging Topic Trend Detection", fontsize=13, fontweight="bold", pad=15)
+    img_path = os.path.join(save_dir, "model_comparison_table.png")
+    safe_savefig(plt, img_path, dpi=300)
+    plt.close(fig)
+
 

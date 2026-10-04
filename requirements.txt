@@ -31,8 +31,9 @@ lxml>=4.9.3
 statsmodels>=0.14.0
 pmdarima>=2.0.4
 
-# Machine Learning & Gradient Boosting (LightGBM)
+# Machine Learning & Gradient Boosting (LightGBM & XGBoost)
 lightgbm>=4.1.0
+xgboost>=2.0.0
 joblib>=1.3.2
 
 # Configuration & Utilities
