@@ -257,6 +257,7 @@ class PredictionPipeline:
             metrics["optimal_threshold"] = best_th
             metrics["val_f1"] = best_val_f1
             metrics["best_iteration"] = int(getattr(predictor, "best_iteration", 0))
+            metrics["best_epoch"] = metrics["best_iteration"]
             comparison_records.append(metrics)
 
             # Save individual model
@@ -364,9 +365,11 @@ class PredictionPipeline:
                 feat_imp,
                 save_path=os.path.join(plots_dir, "feature_importance.png")
             )
+            best_iter = int(getattr(best_predictor, "best_iteration", 0))
             plot_learning_curves(
                 best_predictor.evals_result,
-                best_iteration=getattr(best_predictor, "best_iteration", 0),
+                best_iteration=best_iter,
+                best_epoch=best_iter,
                 save_path=os.path.join(plots_dir, "learning_curves.png")
             )
             plot_threshold_optimization(
@@ -409,14 +412,21 @@ class PredictionPipeline:
         )
         save_dataframe(trending_topics, os.path.join(self.predictions_dir, "predicted_trending_topics.csv"))
 
-        # Save metrics JSON
+        # Save metrics JSON & training history
+        best_iter = int(getattr(best_predictor, "best_iteration", 0))
         metrics_dict = {
             "best_model": best_model_name,
+            "best_iteration": best_iter,
+            "best_epoch": best_iter,
             "models_comparison": comparison_records,
             "forecasting_comparison": ts_comparison
         }
         with open(os.path.join(self.predictions_dir, "evaluation_metrics.json"), "w", encoding="utf-8") as f:
             json.dump(metrics_dict, f, indent=4)
+
+        if hasattr(best_predictor, "evals_result") and best_predictor.evals_result:
+            with open(os.path.join(self.predictions_dir, "training_history.json"), "w", encoding="utf-8") as f:
+                json.dump(best_predictor.evals_result, f, indent=4)
 
         return trending_topics, metrics_dict, comparison_df
 

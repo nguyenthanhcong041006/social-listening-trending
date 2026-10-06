@@ -155,7 +155,7 @@ stage_08_prediction_models:
     objective: "binary"
     metric: ["binary_logloss", "auc"]
     boosting_type: "gbdt"
-    n_estimators: 200
+    n_estimators: 200 # n_estimators: Number of boosting rounds (akin to epochs)
     learning_rate: 0.05
     num_leaves: 31
     max_depth: -1

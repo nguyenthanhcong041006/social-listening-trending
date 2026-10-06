@@ -305,10 +305,11 @@ def plot_comprehensive_evaluation_grid(
 def plot_learning_curves(
     evals_result: dict,
     best_iteration: Optional[int] = None,
+    best_epoch: Optional[int] = None,
     save_path: Optional[str] = None
 ):
     """
-    Plots training, validation, and test learning curves across boosting iterations.
+    Plots training, validation, and test learning curves across boosting iterations / epochs.
     Visualizes:
     1. Loss Curve (binary_logloss)
     2. Discrimination Metric Curve (AUC)
@@ -316,6 +317,9 @@ def plot_learning_curves(
     if not evals_result:
         logger.warning("Empty evals_result provided to plot_learning_curves.")
         return None, None
+
+    # Resolve target best iteration/epoch
+    target_step = best_epoch if best_epoch is not None else best_iteration
 
     # Colors and styles for partitions
     styles = {
@@ -348,18 +352,35 @@ def plot_learning_curves(
                 st = styles.get(split_name, {"color": "black", "label": split_name, "linestyle": "-", "lw": 1.5})
                 ax.plot(rounds, values, label=st["label"], color=st["color"], linestyle=st["linestyle"], lw=st["lw"])
 
-        if best_iteration is not None and best_iteration > 0:
+                # Highlight best epoch/iteration point on validation curve
+                if split_name in ("valid", "val") and target_step is not None and 1 <= target_step <= len(values):
+                    ax.scatter(
+                        [target_step],
+                        [values[target_step - 1]],
+                        color="#d62728",
+                        s=55,
+                        zorder=5,
+                        edgecolor="black",
+                        linewidth=0.8
+                    )
+
+        if target_step is not None and target_step > 0:
+            step_label = (
+                f"Best Epoch ({target_step})"
+                if best_epoch is not None
+                else f"Best Round ({target_step})"
+            )
             ax.axvline(
-                x=best_iteration,
+                x=target_step,
                 color="#d62728",
                 linestyle=":",
                 lw=2.2,
-                label=f"Best Round ({best_iteration})"
+                label=step_label
             )
 
         title = metric_titles.get(metric, metric.replace("_", " ").title())
         ax.set_title(f"Learning Curve: {title}", fontsize=12, fontweight="bold")
-        ax.set_xlabel("Boosting Iteration", fontsize=11)
+        ax.set_xlabel("Iteration / Epoch", fontsize=11)
         ax.set_ylabel(title, fontsize=11)
         ax.legend(loc="best", frameon=True)
         ax.grid(True, linestyle="--", alpha=0.6)
