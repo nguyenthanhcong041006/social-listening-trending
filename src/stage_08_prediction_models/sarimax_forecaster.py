@@ -23,6 +23,9 @@ class SARIMAXForecaster:
     DEFAULT_EXOG_COLS = [
         "engagement",
         "avg_sentiment",
+        "controversy_score",
+        "platform_count",
+        "cross_platform_entropy",
         "hashtag_activity",
         "unique_users"
     ]

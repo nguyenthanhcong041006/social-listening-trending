@@ -6,38 +6,60 @@ from loguru import logger
 
 class FeatureFusion:
     """
-    Sub-stage 8.2: Feature Fusion
+    Sub-stage 8.2: Feature Fusion for Multi-Platform Sports & Early Trend Prediction
     Fuses two independent feature streams into a unified representation:
     1. Social Listening Features:
-       - topic_volume, growth_rate, engagement, avg_sentiment, sentiment_change,
-         positive_ratio, negative_ratio, neutral_ratio, hashtag_activity, hashtag_growth,
-         acceleration, unique_users
-       - Lag & rolling statistics
+       - Volumetric: topic_volume, growth_rate, acceleration, lags 1-3, rolling_mean_volume_3
+       - Social Virality: engagement, comment_to_like_ratio, unique_users, rolling_mean_engagement_3
+       - Multi-Platform Diffusion: platform_count, cross_platform_entropy, platform_spread_speed,
+         fb_volume, tiktok_volume, yt_volume, reddit_volume, news_volume
+       - Sentiment & Controversy (Sports/Drama): avg_sentiment, sentiment_change, sentiment_volatility,
+         positive_ratio, negative_ratio, neutral_ratio, controversy_score, controversy_lag_1,
+         sentiment_drop_acceleration, rolling_mean_controversy_3
     2. Time-Series Forecast Features:
        - SARIMA: sarima_forecast_volume, sarima_forecast_growth
        - SARIMAX: sarimax_forecast_volume, sarimax_forecast_growth
-    
-    Output: Combined Feature Vector fed directly into the gradient boosting classifiers (LightGBM / XGBoost).
     """
 
     SOCIAL_LISTENING_FEATURES = [
         "topic_volume",
         "growth_rate",
+        "acceleration",
         "engagement",
+        "views",
+        "comment_to_like_ratio",
+        "unique_users",
+        "hashtag_activity",
+        "hashtag_growth",
+        # Multi-Platform Diffusion
+        "platform_count",
+        "cross_platform_entropy",
+        "platform_spread_speed",
+        "fb_volume",
+        "tiktok_volume",
+        "yt_volume",
+        "reddit_volume",
+        "news_volume",
+        # Sentiment & Sports Controversy Signals
         "avg_sentiment",
         "sentiment_change",
+        "sentiment_volatility",
         "positive_ratio",
         "negative_ratio",
         "neutral_ratio",
-        "hashtag_activity",
-        "hashtag_growth",
-        "acceleration",
-        "unique_users",
+        "controversy_score",
+        "sentiment_drop_acceleration",
+        # Lags and Rolling statistics
         "volume_lag_1",
+        "volume_lag_2",
+        "volume_lag_3",
         "growth_rate_lag_1",
+        "growth_rate_lag_2",
         "engagement_lag_1",
+        "controversy_lag_1",
         "rolling_mean_volume_3",
         "rolling_mean_engagement_3",
+        "rolling_mean_controversy_3",
     ]
 
     SARIMA_FEATURES = [
@@ -59,13 +81,18 @@ class FeatureFusion:
         self,
         df: pd.DataFrame,
         forecaster_type: str = "auto",
-        is_training: bool = False
+        is_training: bool = False,
+        feature_subset: Optional[List[str]] = None
     ) -> Tuple[np.ndarray, List[str]]:
         """
         Extracts and concatenates feature columns into the Combined Feature Vector.
-        forecaster_type: "sarima", "sarimax", "both", or "auto" (detects available in df).
+        forecaster_type: "sarima", "sarimax", "both", or "auto"
+        feature_subset: Optional explicit list of columns to extract (for Ablation Studies).
         """
-        available_social = [col for col in self.SOCIAL_LISTENING_FEATURES if col in df.columns]
+        if feature_subset is not None:
+            available_social = [col for col in feature_subset if col in df.columns]
+        else:
+            available_social = [col for col in self.SOCIAL_LISTENING_FEATURES if col in df.columns]
 
         if forecaster_type == "sarima":
             ts_cols = [col for col in self.SARIMA_FEATURES if col in df.columns]
@@ -73,7 +100,7 @@ class FeatureFusion:
             ts_cols = [col for col in self.SARIMAX_FEATURES if col in df.columns]
         elif forecaster_type == "both":
             ts_cols = [col for col in (self.SARIMA_FEATURES + self.SARIMAX_FEATURES) if col in df.columns]
-        else: # "auto"
+        else:
             ts_cols = [col for col in (self.SARIMA_FEATURES + self.SARIMAX_FEATURES) if col in df.columns]
 
         feature_cols = available_social + ts_cols
@@ -86,5 +113,4 @@ class FeatureFusion:
             else:
                 X = self.scaler.transform(X)
 
-        logger.debug(f"Fused {X.shape[1]} features ({len(available_social)} Social + {len(ts_cols)} Forecast: {forecaster_type}).")
         return X, feature_cols

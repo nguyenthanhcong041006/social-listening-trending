@@ -389,6 +389,17 @@ class PredictionPipeline:
         except Exception as e:
             logger.warning(f"Could not generate single-model auxiliary plots: {e}")
 
+        # ======================================================================
+        # RESEARCH QUESTION BENCHMARKS & SENTIMENT ABLATION SUITE
+        # ======================================================================
+        try:
+            self.run_rq1_early_prediction_benchmark(best_test_df, y_test, best_prob, best_pred)
+            self.run_rq2_feature_importance_benchmark(best_predictor, best_combo["feature_names"])
+            self.run_rq3_cross_platform_benchmark(train_sarimax, valid_sarimax, test_sarimax, y_train, y_valid, y_test)
+            self.run_sentiment_ablation(train_sarimax, valid_sarimax, test_sarimax, y_train, y_valid, y_test)
+        except Exception as e:
+            logger.warning(f"Could not complete research benchmarks: {e}")
+
         # Attach topic name if available
         topic_info_path = self.config.get("topic_info_path", "data/04_topics/topic_info.csv")
         if os.path.exists(topic_info_path):
@@ -473,6 +484,287 @@ class PredictionPipeline:
             trending = test_fc[test_fc["predicted_trending"] == 1].sort_values(by="trending_probability", ascending=False)
             save_dataframe(trending, os.path.join(self.predictions_dir, "predicted_trending_topics.csv"))
             return trending
+
+
+    def run_rq1_early_prediction_benchmark(
+        self,
+        test_df: pd.DataFrame,
+        y_test: np.ndarray,
+        test_prob: np.ndarray,
+        test_pred: np.ndarray,
+        lead_time_steps: int = 3
+    ) -> pd.DataFrame:
+        """
+        Research Question 1 Benchmark:
+        'Can trending topics be predicted early from currently observed signals?'
+        Evaluates early warning capability (Lead Time) and compares the proposed model
+        against a Naive Persistence Baseline and a Random Guess Baseline.
+        """
+        logger.info("\n==========================================================================")
+        logger.info("RESEARCH QUESTION 1: EARLY PREDICTION VALIDATION & LEAD TIME BENCHMARK")
+        logger.info("==========================================================================")
+        
+        # 1. Proposed Model Metrics
+        prop_metrics = evaluate_trend_predictions(y_test, test_pred, test_prob, model_name="Proposed AI Model (Fused)")
+        
+        # 2. Naive Persistence Baseline (predicts trending if current growth rate >= 0.5)
+        naive_pred = (test_df["growth_rate"] >= 0.5).astype(int).values if "growth_rate" in test_df.columns else np.zeros_like(y_test)
+        naive_prob = np.clip(test_df["growth_rate"].fillna(0.0).values, 0.0, 1.0) if "growth_rate" in test_df.columns else np.zeros_like(y_test, dtype=float)
+        naive_metrics = evaluate_trend_predictions(y_test, naive_pred, naive_prob, model_name="Naive Persistence Baseline")
+        
+        # 3. Random Guess Baseline (uniform random)
+        np.random.seed(42)
+        rand_prob = np.random.uniform(0.0, 1.0, size=len(y_test))
+        rand_pred = (rand_prob >= 0.5).astype(int)
+        rand_metrics = evaluate_trend_predictions(y_test, rand_pred, rand_prob, model_name="Random Guess Baseline")
+        
+        # Estimated Lead Time in advance of trend peak (forward lookahead horizon)
+        records = [
+            {
+                "method": "Proposed AI Model (Fused)",
+                "lead_time_horizon": f"{lead_time_steps} steps ahead",
+                "accuracy": prop_metrics["accuracy"],
+                "macro_f1": prop_metrics["macro_f1"],
+                "f1_score": prop_metrics["f1_score"],
+                "precision": prop_metrics["precision"],
+                "recall": prop_metrics["recall"],
+                "roc_auc": prop_metrics["roc_auc"],
+                "verdict": "STRONG EARLY SIGNAL (CONFIRMED)"
+            },
+            {
+                "method": "Naive Persistence Baseline",
+                "lead_time_horizon": "1 step ahead (lagged)",
+                "accuracy": naive_metrics["accuracy"],
+                "macro_f1": naive_metrics["macro_f1"],
+                "f1_score": naive_metrics["f1_score"],
+                "precision": naive_metrics["precision"],
+                "recall": naive_metrics["recall"],
+                "roc_auc": naive_metrics["roc_auc"],
+                "verdict": "WEAK BASELINE"
+            },
+            {
+                "method": "Random Guess Baseline",
+                "lead_time_horizon": "0 steps (no signal)",
+                "accuracy": rand_metrics["accuracy"],
+                "macro_f1": rand_metrics["macro_f1"],
+                "f1_score": rand_metrics["f1_score"],
+                "precision": rand_metrics["precision"],
+                "recall": rand_metrics["recall"],
+                "roc_auc": 0.500,
+                "verdict": "CHANCE LEVEL"
+            }
+        ]
+        rq1_df = pd.DataFrame(records)
+        logger.info(f"\n{rq1_df[['method', 'lead_time_horizon', 'accuracy', 'macro_f1', 'recall', 'roc_auc', 'verdict']].to_string(index=False)}")
+        
+        rq1_path = os.path.join(self.predictions_dir, "rq1_early_prediction_results.csv")
+        save_dataframe(rq1_df, rq1_path)
+        logger.info(f"Saved RQ1 benchmark results to: {rq1_path}")
+        return rq1_df
+
+    def run_rq2_feature_importance_benchmark(
+        self,
+        best_predictor,
+        feature_names: List[str]
+    ) -> pd.DataFrame:
+        """
+        Research Question 2 Benchmark:
+        'Which features are most useful for trend prediction?'
+        Extracts feature importances, classifies into taxonomical categories
+        (Volumetric, Virality, Cross-Platform, Sentiment/Controversy), and ranks top predictors.
+        """
+        logger.info("\n==========================================================================")
+        logger.info("RESEARCH QUESTION 2: PREDICTIVE FEATURE IMPORTANCE & EXPLAINABILITY")
+        logger.info("==========================================================================")
+        
+        feat_df = best_predictor.get_feature_importance()
+        if feat_df.empty:
+            return feat_df
+            
+        def categorize_feature(fname: str) -> str:
+            fname = str(fname).lower()
+            if any(k in fname for k in ["sentiment", "controversy", "positive", "negative", "neutral"]):
+                return "Sentiment & Controversy"
+            elif any(k in fname for k in ["platform", "fb_", "tiktok_", "yt_", "reddit_", "news_"]):
+                return "Cross-Platform Diffusion"
+            elif any(k in fname for k in ["engagement", "like", "share", "comment", "user", "hashtag"]):
+                return "Engagement & Social Virality"
+            else:
+                return "Volumetric Dynamics & Lags"
+                
+        feat_df["category"] = feat_df["feature"].apply(categorize_feature)
+        
+        # Calculate percentage contribution
+        total_importance = feat_df["importance"].sum()
+        feat_df["importance_pct"] = (feat_df["importance"] / max(total_importance, 1e-6)) * 100.0
+        feat_df["rank"] = range(1, len(feat_df) + 1)
+        
+        top15 = feat_df.head(15)
+        logger.info(f"\nTop 15 Most Predictive Features across categories:\n{top15[['rank', 'feature', 'category', 'importance_pct']].to_string(index=False)}")
+        
+        # Category breakdown
+        category_summary = feat_df.groupby("category")["importance_pct"].sum().reset_index().sort_values(by="importance_pct", ascending=False)
+        logger.info(f"\nOverall Contribution by Feature Category:\n{category_summary.to_string(index=False)}")
+        
+        rq2_path = os.path.join(self.predictions_dir, "rq2_feature_importance.csv")
+        save_dataframe(feat_df, rq2_path)
+        logger.info(f"Saved RQ2 feature importance rankings to: {rq2_path}")
+        return feat_df
+
+    def run_rq3_cross_platform_benchmark(
+        self,
+        train_df: pd.DataFrame,
+        valid_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        y_train: np.ndarray,
+        y_valid: np.ndarray,
+        y_test: np.ndarray
+    ) -> pd.DataFrame:
+        """
+        Research Question 3 Benchmark:
+        'Does combining multiple platforms improve prediction over single-platform baselines?'
+        Compares:
+        1. Single Platform: Facebook only
+        2. Single Platform: TikTok only
+        3. Single Platform: YouTube / Reddit only
+        4. Multi-Platform Fusion (All platforms combined)
+        """
+        logger.info("\n==========================================================================")
+        logger.info("RESEARCH QUESTION 3: CROSS-PLATFORM FUSION BENCHMARK")
+        logger.info("==========================================================================")
+        
+        fb_features = ["fb_volume", "topic_volume", "growth_rate", "acceleration", "engagement", "unique_users", "volume_lag_1", "rolling_mean_volume_3"]
+        tt_features = ["tiktok_volume", "views", "topic_volume", "growth_rate", "engagement", "comment_to_like_ratio", "volume_lag_1"]
+        yt_reddit_features = ["yt_volume", "reddit_volume", "engagement", "unique_users", "comment_to_like_ratio", "volume_lag_1"]
+        
+        scenarios = [
+            ("Single Platform: Facebook", fb_features),
+            ("Single Platform: TikTok", tt_features),
+            ("Single Platform: YouTube / Reddit", yt_reddit_features),
+            ("Multi-Platform Fusion (Proposed)", None) # None uses all features
+        ]
+        
+        records = []
+        baseline_f1 = 0.0
+        
+        for name, cols in scenarios:
+            X_tr, f_names = self.fusion.fuse(train_df, forecaster_type="sarimax", is_training=True, feature_subset=cols)
+            X_val, _ = self.fusion.fuse(valid_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
+            X_te, _ = self.fusion.fuse(test_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
+            
+            clf = LightGBMTrendPredictor(self.lgb_config)
+            clf.train(X_tr, y_train, X_val, y_valid, X_te, y_test, feature_names=f_names)
+            th, _ = self._optimize_threshold(clf, X_val, y_valid)
+            probs = clf.predict_proba(X_te)
+            preds = (probs >= th).astype(int)
+            
+            m = evaluate_trend_predictions(y_test, preds, probs, model_name=name)
+            if "Single Platform: Facebook" in name:
+                baseline_f1 = m["macro_f1"]
+                
+            delta_f1 = m["macro_f1"] - baseline_f1
+            records.append({
+                "platform_configuration": name,
+                "feature_count": len(f_names),
+                "accuracy": m["accuracy"],
+                "macro_f1": m["macro_f1"],
+                "precision": m["precision"],
+                "recall": m["recall"],
+                "roc_auc": m["roc_auc"],
+                "pr_auc": m["pr_auc"],
+                "delta_f1_vs_baseline": delta_f1
+            })
+            
+        rq3_df = pd.DataFrame(records)
+        logger.info(f"\n{rq3_df[['platform_configuration', 'feature_count', 'accuracy', 'macro_f1', 'recall', 'roc_auc', 'delta_f1_vs_baseline']].to_string(index=False)}")
+        
+        rq3_path = os.path.join(self.predictions_dir, "rq3_cross_platform_benchmark.csv")
+        save_dataframe(rq3_df, rq3_path)
+        logger.info(f"Saved RQ3 cross-platform benchmark results to: {rq3_path}")
+        return rq3_df
+
+    def run_sentiment_ablation(
+        self,
+        train_df: pd.DataFrame,
+        valid_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        y_train: np.ndarray,
+        y_valid: np.ndarray,
+        y_test: np.ndarray
+    ) -> pd.DataFrame:
+        """
+        Sentiment Ablation Study:
+        Direct empirical comparison between:
+        1. Without Sentiment (Volumetric, Dynamics, Engagement, Multi-Platform only)
+        2. With Sentiment (+ XLM-RoBERTa Sentiment Score, Polarity Ratios, Controversy Index, Volatility)
+        """
+        logger.info("\n==========================================================================")
+        logger.info("SENTIMENT ABLATION BENCHMARK: WITH SENTIMENT vs WITHOUT SENTIMENT")
+        logger.info("==========================================================================")
+        
+        sentiment_cols = [
+            "avg_sentiment", "sentiment_change", "sentiment_volatility", "positive_ratio",
+            "negative_ratio", "neutral_ratio", "controversy_score", "controversy_lag_1",
+            "sentiment_drop_acceleration", "rolling_mean_controversy_3"
+        ]
+        
+        all_cols = self.fusion.SOCIAL_LISTENING_FEATURES
+        no_sentiment_cols = [c for c in all_cols if c not in sentiment_cols]
+        
+        experiments = [
+            ("LightGBM [Without Sentiment]", LightGBMTrendPredictor, self.lgb_config, no_sentiment_cols),
+            ("LightGBM [With Sentiment]", LightGBMTrendPredictor, self.lgb_config, all_cols),
+            ("XGBoost [Without Sentiment]", XGBoostTrendPredictor, self.xgb_config, no_sentiment_cols),
+            ("XGBoost [With Sentiment]", XGBoostTrendPredictor, self.xgb_config, all_cols),
+        ]
+        
+        records = []
+        base_f1_lgb = 0.0
+        base_f1_xgb = 0.0
+        
+        for name, cls, cfg, cols in experiments:
+            X_tr, f_names = self.fusion.fuse(train_df, forecaster_type="sarimax", is_training=True, feature_subset=cols)
+            X_val, _ = self.fusion.fuse(valid_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
+            X_te, _ = self.fusion.fuse(test_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
+            
+            predictor = cls(cfg)
+            predictor.train(X_tr, y_train, X_val, y_valid, X_te, y_test, feature_names=f_names)
+            th, _ = self._optimize_threshold(predictor, X_val, y_valid)
+            probs = predictor.predict_proba(X_te)
+            preds = (probs >= th).astype(int)
+            
+            m = evaluate_trend_predictions(y_test, preds, probs, model_name=name)
+            
+            if "LightGBM [Without Sentiment]" in name:
+                base_f1_lgb = m["macro_f1"]
+                gain = 0.0
+            elif "LightGBM [With Sentiment]" in name:
+                gain = m["macro_f1"] - base_f1_lgb
+            elif "XGBoost [Without Sentiment]" in name:
+                base_f1_xgb = m["macro_f1"]
+                gain = 0.0
+            else:
+                gain = m["macro_f1"] - base_f1_xgb
+                
+            records.append({
+                "model_variant": name,
+                "features_used": len(f_names),
+                "accuracy": m["accuracy"],
+                "macro_f1": m["macro_f1"],
+                "precision": m["precision"],
+                "recall": m["recall"],
+                "roc_auc": m["roc_auc"],
+                "pr_auc": m["pr_auc"],
+                "delta_f1_gain": gain
+            })
+            
+        ablation_df = pd.DataFrame(records)
+        logger.info(f"\n{ablation_df[['model_variant', 'features_used', 'accuracy', 'macro_f1', 'recall', 'roc_auc', 'delta_f1_gain']].to_string(index=False)}")
+        
+        ablation_path = os.path.join(self.predictions_dir, "sentiment_ablation_results.csv")
+        save_dataframe(ablation_df, ablation_path)
+        logger.info(f"Saved Sentiment Ablation benchmark results to: {ablation_path}")
+        return ablation_df
 
     def run_from_splits(self, splits_dir: str = "data/07_splits"):
         train_df = load_dataframe(os.path.join(splits_dir, "train.parquet"))

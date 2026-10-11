@@ -6,7 +6,7 @@ from tqdm import tqdm
 from loguru import logger
 from .encoder import XLMRoBERTaDualEncoder, XLMRoBERTaEncoder
 from .pooling import mean_pooling
-from .sentiment_head import SentimentClassificationHead, compute_sentiment_score
+from .sentiment_head import SentimentClassificationHead, compute_sentiment_score, compute_controversy_score
 from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
 
 class MultilingualSentimentPipeline:
@@ -14,7 +14,7 @@ class MultilingualSentimentPipeline:
     Stage 3 Pipeline:
     Executes dual-branch processing using two dedicated fine-tuned XLM-RoBERTa models:
     1. Branch A: Contextual Sentence Embeddings (fine-tuned for BERTopic topic clustering)
-    2. Branch B: Multilingual Sentiment Analysis (fine-tuned for 3-class sentiment score)
+    2. Branch B: Multilingual Sentiment Analysis (fine-tuned for 3-class sentiment score and controversy index)
     """
 
     def __init__(self, config: dict = None):
@@ -78,7 +78,7 @@ class MultilingualSentimentPipeline:
         """Runs batch inference over the entire input DataFrame for both models."""
         texts = df[text_column].tolist()
         total_samples = len(texts)
-        logger.info(f"Starting Stage 3 Multilingual Pipeline on {total_samples} posts...")
+        logger.info(f"Starting Stage 3 Multilingual Sports Pipeline on {total_samples} posts...")
         
         # Branch A: BERTopic Sentence Embeddings
         embeddings_matrix = self.extract_embeddings(texts)
@@ -92,12 +92,15 @@ class MultilingualSentimentPipeline:
         
         # Calculate Sentiment Score: S = P(positive) - P(negative)
         sentiment_scores = compute_sentiment_score(probabilities_matrix)
+        # Calculate Controversy Index for Sports/Drama
+        controversy_scores = compute_controversy_score(probabilities_matrix)
         
         df = df.copy()
         df["p_negative"] = probabilities_matrix[:, 0]
         df["p_neutral"] = probabilities_matrix[:, 1]
         df["p_positive"] = probabilities_matrix[:, 2]
         df["sentiment_score"] = sentiment_scores
+        df["controversy_score"] = controversy_scores
         
         # Discrete sentiment label
         label_map = {0: "negative", 1: "neutral", 2: "positive"}
@@ -110,7 +113,7 @@ class MultilingualSentimentPipeline:
         save_dataframe(df, self.output_df_path)
         
         logger.info(f"Saved Embeddings matrix with shape {embeddings_matrix.shape} to: {self.output_embeddings_path}")
-        logger.info(f"Saved dataset with Sentiment Scores to: {self.output_df_path}")
+        logger.info(f"Saved dataset with Sentiment & Controversy Scores to: {self.output_df_path}")
         return df, embeddings_matrix
 
     def run_from_file(self, input_path: str):

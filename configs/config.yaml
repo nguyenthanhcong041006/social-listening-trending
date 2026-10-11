@@ -1,161 +1,187 @@
-# ==============================================================================
-# PIPELINE CONFIGURATION - SOCIAL LISTENING & TREND PREDICTION
-# ==============================================================================
-
 project:
-  name: "social_listening_trend_prediction"
-  version: "1.0.0"
+  name: social_listening_trend_prediction
+  version: 1.0.0
   random_seed: 42
-  device: "cuda"  # "cuda" or "cpu"
-
-# ------------------------------------------------------------------------------
-# Data and Artifact Paths
-# ------------------------------------------------------------------------------
+  device: cuda
+  domain: sports
+  supported_platforms:
+  - facebook
+  - tiktok
+  - youtube
+  - reddit
+  - news
 paths:
-  raw_data_dir: "data/01_raw"
-  preprocessed_data_dir: "data/02_preprocessed"
-  embeddings_dir: "data/03_embeddings_sentiment"
-  topics_dir: "data/04_topics"
-  topic_tracking_dir: "data/05_topic_tracking"
-  features_labels_dir: "data/06_features_labels"
-  splits_dir: "data/07_splits"
-  predictions_dir: "data/08_predictions"
-  models_dir: "models"
-
-# ------------------------------------------------------------------------------
-# Stage 1: Data Collection Schema & Ingestion
-# ------------------------------------------------------------------------------
+  raw_data_dir: data/01_raw
+  preprocessed_data_dir: data/02_preprocessed
+  embeddings_dir: data/03_embeddings_sentiment
+  topics_dir: data/04_topics
+  topic_tracking_dir: data/05_topic_tracking
+  features_labels_dir: data/06_features_labels
+  splits_dir: data/07_splits
+  predictions_dir: data/08_predictions
+  models_dir: models
 stage_01_data_collection:
   required_fields:
-    - "text"
-    - "timestamp"
-    - "likes"
-    - "shares"
-    - "comments"
-    - "hashtags"
-    - "followers"
+  - text
+  - timestamp
+  - likes
+  - shares
+  - comments
+  - hashtags
+  - followers
+  - platform
   batch_size: 1000
-
-# ------------------------------------------------------------------------------
-# Stage 2: Preprocessing Data
-# ------------------------------------------------------------------------------
+  optional_fields:
+  - views
+  - sport_category
+  - source_type
+  - post_id
 stage_02_preprocessing:
   deduplication:
-    method: "exact_and_similarity" # "exact" or "similarity"
+    method: exact_and_similarity
     similarity_threshold: 0.95
-    subset_columns: ["text"]
+    subset_columns:
+    - text
   spam_filter:
     min_followers: 5
     max_hashtags: 15
     max_urls: 4
     spam_keywords_path: null
+    gambling_keywords:
+    - kèo nhà cái
+    - tỷ lệ kèo
+    - kèo bóng
+    - soi kèo
+    - nhóm tele
+    - link cá cược
+    - nhà cái uy tín
   text_cleaning:
     remove_html: true
     normalize_whitespace: true
     remove_urls: true
   text_normalization:
-    unicode_form: "NFKC"
+    unicode_form: NFKC
     lowercase: true
-    max_repeated_chars: 2  # e.g., "yesssss" -> "yess"
+    max_repeated_chars: 2
   preserve_semantic:
     preserve_hashtags: true
-    demojize: false        # Retain raw emojis for multilingual models or convert to text
-    preserve_negation: true # Protect negation context (prevent aggressive stopword stripping)
-
-# ------------------------------------------------------------------------------
-# Stage 3: Multilingual Representation & Sentiment Analysis (Dual XLM-RoBERTa)
-# ------------------------------------------------------------------------------
+    demojize: false
+    preserve_negation: true
+    sports_slang_preservation: true
 stage_03_multilingual_sentiment:
-  # Model 1: Fine-tuned XLM-RoBERTa for Contextual Sentence Embeddings (for BERTopic clustering)
-  # Uses semantic sentence representations (STS/contrastive objective) to separate topic spaces
-  embedding_model_name: "xlm-roberta-base" # or fine-tuned checkpoint: "models/xlm_roberta/embedding"
-  
-  # Model 2: Fine-tuned XLM-RoBERTa for Multilingual Sentiment Analysis
-  # Uses classification head to predict probabilities across [Negative, Neutral, Positive]
-  sentiment_model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment" # or checkpoint: "models/xlm_roberta/sentiment"
-
-  # Legacy fallback key
-  model_name: "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+  embedding_model_name: models/xlm_roberta/embedding
+  sentiment_model_name: models/xlm_roberta/sentiment
+  model_name: cardiffnlp/twitter-xlm-roberta-base-sentiment
   max_length: 128
   batch_size: 64
-  pooling: "mean" # Attention-mask-aware mean pooling
-  sentiment_score_formula: "P(positive) - P(negative)" # Metric scale [-1.0, 1.0]
-
-# ------------------------------------------------------------------------------
-# Stage 4: Topic Detection (BERTopic)
-# ------------------------------------------------------------------------------
+  pooling: mean
+  sentiment_score_formula: P(positive) - P(negative)
+  compute_controversy: true
 stage_04_topic_detection:
   umap:
     n_neighbors: 15
     n_components: 5
     min_dist: 0.0
-    metric: "cosine"
+    metric: cosine
   hdbscan:
     min_cluster_size: 10
     min_samples: 5
-    metric: "euclidean"
+    metric: euclidean
     prediction_data: true
   representation:
     top_n_words: 10
     diversity: 0.3
-    ngram_range: [1, 2]
-
-# ------------------------------------------------------------------------------
-# Stage 5: Topic Tracking
-# ------------------------------------------------------------------------------
+    ngram_range:
+    - 1
+    - 2
+  hierarchical:
+    enabled: true
+    nr_topics: auto
+    hierarchical_levels: 2
+    distance_threshold: 1.5
+  sports_stopwords:
+  - trận
+  - trận đấu
+  - hôm nay
+  - video
+  - trực tiếp
+  - bóng
+  - sân
+  - full
+  - highlight
+  - clip
 stage_05_topic_tracking:
-  time_window: "1D"  # Time aggregation window: "1H", "1D", "7D"
+  time_window: 1D
   engagement_weights:
     likes: 1.0
     shares: 2.0
     comments: 1.5
-
-# ------------------------------------------------------------------------------
-# Stage 6: Feature Engineering & Label Data
-# ------------------------------------------------------------------------------
+  track_cross_platform: true
+  platform_weights:
+    facebook: 1.0
+    tiktok: 0.8
+    youtube: 1.2
+    reddit: 1.5
+    news: 2.0
 stage_06_feature_engineering_labeling:
   feature_engineering:
-    lags: [1, 2, 3] # Time-lag features
-    rolling_windows: [3, 7]
+    lags:
+    - 1
+    - 2
+    - 3
+    rolling_windows:
+    - 3
+    - 7
     include_acceleration: true
+    include_cross_platform: true
+    include_controversy: true
   labeling:
-    future_time_window_steps: 3  # Forward lookahead steps
-    future_growth_threshold: 0.5 # Growth >= 50%
-    future_volume_threshold: 5   # Future volume >= 5 posts (tuned for clean trending distribution)
-
-# ------------------------------------------------------------------------------
-# Stage 7: Time-Based Data Splitting
-# ------------------------------------------------------------------------------
+    future_time_window_steps: 3
+    future_growth_threshold: 0.5
+    future_volume_threshold: 5
+    lead_time_steps: 3
 stage_07_time_based_split:
-  train_ratio: 0.70
-  valid_ratio: 0.20
-  test_ratio: 0.10
-
-# ------------------------------------------------------------------------------
-# Stage 8: Prediction Models & Feature Fusion
-# ------------------------------------------------------------------------------
+  train_ratio: 0.7
+  valid_ratio: 0.2
+  test_ratio: 0.1
 stage_08_prediction_models:
-  compare_models: true # Enables 4-way research benchmark: SARIMA/SARIMAX + LightGBM/XGBoost
+  compare_models: true
   sarima:
-    order: [1, 1, 1]          # (p, d, q)
-    seasonal_order: [1, 1, 0, 7] # (P, D, Q, s) - weekly seasonality
+    order:
+    - 1
+    - 1
+    - 1
+    seasonal_order:
+    - 1
+    - 1
+    - 0
+    - 7
     forecast_steps: 3
   sarimax:
-    order: [1, 1, 1]
-    seasonal_order: [1, 1, 0, 7]
+    order:
+    - 1
+    - 1
+    - 1
+    seasonal_order:
+    - 1
+    - 1
+    - 0
+    - 7
     forecast_steps: 3
     exog_cols:
-      - "engagement"
-      - "avg_sentiment"
-      - "hashtag_activity"
-      - "unique_users"
+    - engagement
+    - avg_sentiment
+    - hashtag_activity
+    - unique_users
   feature_fusion:
-    scaler: "standard" # "standard" or "minmax"
+    scaler: standard
   lightgbm:
-    objective: "binary"
-    metric: ["binary_logloss", "auc"]
-    boosting_type: "gbdt"
-    n_estimators: 200 # n_estimators: Number of boosting rounds (akin to epochs)
+    objective: binary
+    metric:
+    - binary_logloss
+    - auc
+    boosting_type: gbdt
+    n_estimators: 200
     learning_rate: 0.05
     num_leaves: 31
     max_depth: -1
@@ -170,4 +196,8 @@ stage_08_prediction_models:
     colsample_bytree: 0.8
     early_stopping_rounds: 20
     auto_class_weights: true
-
+  research_benchmarks:
+    rq1_early_prediction_lead_time: true
+    rq2_feature_importance_shap: true
+    rq3_multi_platform_fusion: true
+    ablation_sentiment: true

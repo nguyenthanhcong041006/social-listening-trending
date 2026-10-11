@@ -30,8 +30,25 @@ def compute_sentiment_score(probabilities: np.ndarray) -> np.ndarray:
     - S = 0: Neutral
     - S < 0: Leaning Negative
     """
-    # probabilities: shape (N, 3) where columns correspond to [P_neg, P_neu, P_pos]
     p_negative = probabilities[:, 0]
     p_positive = probabilities[:, 2]
     sentiment_score = p_positive - p_negative
     return sentiment_score
+
+def compute_controversy_score(probabilities: np.ndarray) -> np.ndarray:
+    """
+    Controversy Score (Polarization & Heated Debate Index):
+    Measures the intensity of debate between opposing fanbases (e.g. referee scandals, player drama).
+    High controversy occurs when both Positive and Negative probabilities are elevated and Neutral is low.
+    Bounded in [0.0, 1.0].
+    """
+    p_neg = probabilities[:, 0]
+    p_pos = probabilities[:, 2]
+    p_neu = probabilities[:, 1]
+    
+    # Polarized contention between opposing sentiment poles
+    polarization = 2.0 * np.minimum(p_pos, p_neg) / (p_pos + p_neg + 1e-6)
+    # Weigh by emotional involvement (non-neutral weight)
+    emotional_weight = (1.0 - p_neu).clip(0.0, 1.0)
+    controversy = polarization * emotional_weight
+    return np.clip(controversy, 0.0, 1.0)

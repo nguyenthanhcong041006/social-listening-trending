@@ -3,6 +3,11 @@ from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassific
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from .pooling import mean_pooling
+from .versioning import (
+    resolve_model_path,
+    DEFAULT_FALLBACK_EMBEDDING,
+    DEFAULT_FALLBACK_SENTIMENT,
+)
 
 class XLMRoBERTaEmbeddingEncoder:
     """
@@ -14,17 +19,21 @@ class XLMRoBERTaEmbeddingEncoder:
 
     def __init__(self, model_name: str = "xlm-roberta-base", device: str = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model_name = model_name
-        logger.info(f"Initializing XLM-RoBERTa Embedding Model ({model_name}) on device: {self.device}")
+        self.model_name = resolve_model_path(
+            model_name,
+            default_fallback=DEFAULT_FALLBACK_EMBEDDING,
+            task="BERTopic Embeddings"
+        )
+        logger.info(f"Initializing XLM-RoBERTa Embedding Model ({self.model_name}) on device: {self.device}")
         
         try:
             # Try loading directly from local cache or local path (instant & 100% offline-ready)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
-            self.model = AutoModel.from_pretrained(model_name, local_files_only=True).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+            self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True).to(self.device)
         except Exception:
             # Fall back to downloading from Hugging Face Hub if not cached yet
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModel.from_pretrained(model_name).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModel.from_pretrained(self.model_name).to(self.device)
         self.model.eval()
 
     def tokenize(self, texts: List[str], max_length: int = 128) -> Dict[str, torch.Tensor]:
@@ -71,17 +80,21 @@ class XLMRoBERTaSentimentClassifier:
 
     def __init__(self, model_name: str = "cardiffnlp/twitter-xlm-roberta-base-sentiment", device: str = None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model_name = model_name
-        logger.info(f"Initializing XLM-RoBERTa Sentiment Model ({model_name}) on device: {self.device}")
+        self.model_name = resolve_model_path(
+            model_name,
+            default_fallback=DEFAULT_FALLBACK_SENTIMENT,
+            task="Sentiment Classifier"
+        )
+        logger.info(f"Initializing XLM-RoBERTa Sentiment Model ({self.model_name}) on device: {self.device}")
         
         try:
             # Try loading directly from local cache or local path (instant & 100% offline-ready)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_name, local_files_only=True).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+            self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name, local_files_only=True).to(self.device)
         except Exception:
             # Fall back to downloading from Hugging Face Hub if not cached yet
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_name).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device)
         self.model.eval()
 
     def tokenize(self, texts: List[str], max_length: int = 128) -> Dict[str, torch.Tensor]:
@@ -123,17 +136,22 @@ class XLMRoBERTaDualEncoder:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         
         # Resolve model identifiers
-        self.embedding_model_name = embedding_model_name or model_name or "xlm-roberta-base"
-        self.sentiment_model_name = sentiment_model_name or model_name or "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+        self.embedding_model_name = embedding_model_name or model_name or "models/xlm_roberta/embedding"
+        self.sentiment_model_name = sentiment_model_name or model_name or "models/xlm_roberta/sentiment"
         
         # If both point to the exact same sentiment classification checkpoint (shared fallback mode)
         self.is_shared = (self.embedding_model_name == self.sentiment_model_name)
         
         if self.is_shared:
-            logger.info(f"Using single shared XLM-RoBERTa backbone ({self.embedding_model_name}) for dual outputs.")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.embedding_model_name)
-            self.model = AutoModelForSequenceClassification.from_pretrained(
+            resolved_shared = resolve_model_path(
                 self.embedding_model_name,
+                default_fallback=DEFAULT_FALLBACK_SENTIMENT,
+                task="Shared XLM-RoBERTa"
+            )
+            logger.info(f"Using single shared XLM-RoBERTa backbone ({resolved_shared}) for dual outputs.")
+            self.tokenizer = AutoTokenizer.from_pretrained(resolved_shared)
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                resolved_shared,
                 output_hidden_states=True
             ).to(self.device)
             self.model.eval()
@@ -141,8 +159,6 @@ class XLMRoBERTaDualEncoder:
             self.sentiment_classifier = None
         else:
             logger.info("Initializing 2 dedicated fine-tuned XLM-RoBERTa models:")
-            logger.info(f" - Model 1 (BERTopic Embeddings): {self.embedding_model_name}")
-            logger.info(f" - Model 2 (Sentiment Analysis):   {self.sentiment_model_name}")
             self.embedding_encoder = XLMRoBERTaEmbeddingEncoder(model_name=self.embedding_model_name, device=self.device)
             self.sentiment_classifier = XLMRoBERTaSentimentClassifier(model_name=self.sentiment_model_name, device=self.device)
             self.tokenizer = self.embedding_encoder.tokenizer

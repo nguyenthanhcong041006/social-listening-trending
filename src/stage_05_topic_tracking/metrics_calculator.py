@@ -8,14 +8,15 @@ def compute_topic_tracking_metrics(
     engagement_weights: Dict[str, float] = None
 ) -> pd.DataFrame:
     """
-    Topic Tracking Metrics:
-    Calculates the 6 time-series tracking dimensions reflecting topic dynamics over time:
+    Topic Tracking Metrics with Cross-Platform & Sports Controversy Dimensions:
+    Calculates comprehensive time-series tracking dimensions:
     1. Topic Volume: Post count within time bucket
-    2. Growth Rate: Volume percentage growth relative to previous time bucket
-    3. Engagement: Weighted interaction score (Likes + Shares + Comments)
-    4. Sentiment Change: Delta of mean sentiment score between consecutive time buckets
-    5. Hashtag Activity: Unique hashtag count active within the window
-    6. Unique Users: Distinct post author count
+    2. Growth Rate & Acceleration: Volume dynamics and second derivative
+    3. Cross-Platform Diffusion: platform_count, cross_platform_entropy, per-platform volumes
+    4. Engagement & Comment-to-Like Ratio: Weighted interaction score and heated debate indicator
+    5. Sentiment Dynamics: Mean sentiment, sentiment change, sentiment volatility
+    6. Controversy Index: Polarized debate metric (critical for sports drama/scandals)
+    7. Hashtag Activity & Unique Authors: Topic breadth and reach
     """
     records = []
     
@@ -24,10 +25,37 @@ def compute_topic_tracking_metrics(
         likes = group["likes"].sum() if "likes" in group else 0
         shares = group["shares"].sum() if "shares" in group else 0
         comments = group["comments"].sum() if "comments" in group else 0
-        engagement = compute_engagement_score(likes, shares, comments, engagement_weights)
+        views = group["views"].sum() if "views" in group else 0
         
-        # Average sentiment score and sentiment class ratios (PDF Section 7)
+        # Standard weighted engagement
+        engagement = compute_engagement_score(likes, shares, comments, engagement_weights)
+        comment_to_like_ratio = float(comments / (likes + 1.0))
+        
+        # Multi-platform diffusion metrics
+        if "platform" in group:
+            platform_count = int(group["platform"].nunique())
+            p_counts = group["platform"].value_counts(normalize=True).values
+            entropy = -float(np.sum(p_counts * np.log2(p_counts + 1e-12)))
+            max_entropy = np.log2(5.0)  # normalized across 5 primary platforms (fb, tt, yt, reddit, news)
+            cross_platform_entropy = float(np.clip(entropy / max_entropy, 0.0, 1.0))
+            
+            fb_vol = int((group["platform"] == "facebook").sum())
+            tiktok_vol = int((group["platform"] == "tiktok").sum())
+            yt_vol = int((group["platform"] == "youtube").sum())
+            reddit_vol = int((group["platform"] == "reddit").sum())
+            news_vol = int((group["platform"] == "news").sum())
+        else:
+            platform_count = 1
+            cross_platform_entropy = 0.0
+            fb_vol = volume
+            tiktok_vol = 0
+            yt_vol = 0
+            reddit_vol = 0
+            news_vol = 0
+            
+        # Average sentiment score and class ratios
         avg_sentiment = float(group["sentiment_score"].mean()) if "sentiment_score" in group else 0.0
+        sentiment_volatility = float(group["sentiment_score"].std(ddof=0)) if ("sentiment_score" in group and len(group) > 1) else 0.0
         
         if "sentiment_label" in group:
             pos_ratio = float((group["sentiment_label"] == "positive").mean())
@@ -40,6 +68,13 @@ def compute_topic_tracking_metrics(
             neu_ratio = float(((scores >= -0.05) & (scores <= 0.05)).mean())
         else:
             pos_ratio, neg_ratio, neu_ratio = 0.0, 0.0, 1.0
+
+        # Controversy index (polarization between fans in sports debates / scandal spikes)
+        if "controversy_score" in group:
+            controversy_score = float(group["controversy_score"].mean())
+        else:
+            polarization = 2.0 * min(pos_ratio, neg_ratio) / (pos_ratio + neg_ratio + 1e-6)
+            controversy_score = float(polarization * (1.0 - neu_ratio))
         
         # Hashtag count
         hashtags = []
@@ -58,10 +93,21 @@ def compute_topic_tracking_metrics(
             "time_bucket": bucket,
             "topic_volume": volume,
             "engagement": engagement,
+            "views": views,
+            "comment_to_like_ratio": comment_to_like_ratio,
+            "platform_count": platform_count,
+            "cross_platform_entropy": cross_platform_entropy,
+            "fb_volume": fb_vol,
+            "tiktok_volume": tiktok_vol,
+            "yt_volume": yt_vol,
+            "reddit_volume": reddit_vol,
+            "news_volume": news_vol,
             "avg_sentiment": avg_sentiment,
+            "sentiment_volatility": sentiment_volatility,
             "positive_ratio": pos_ratio,
             "negative_ratio": neg_ratio,
             "neutral_ratio": neu_ratio,
+            "controversy_score": controversy_score,
             "hashtag_activity": hashtag_activity,
             "unique_users": unique_users
         })
@@ -70,10 +116,16 @@ def compute_topic_tracking_metrics(
     if metrics_df.empty:
         return metrics_df
     
-    # Sort chronologically per topic to compute Growth Rate and Sentiment Change deltas
+    # Sort chronologically per topic to compute dynamic deltas
     metrics_df = metrics_df.sort_values(by=["topic_id", "time_bucket"]).reset_index(drop=True)
     
+    # Growth rate and acceleration (first and second derivatives)
     metrics_df["growth_rate"] = metrics_df.groupby("topic_id")["topic_volume"].pct_change().fillna(0.0)
+    metrics_df["acceleration"] = metrics_df.groupby("topic_id")["growth_rate"].diff().fillna(0.0)
+    
+    # Sentiment & controversy deltas
     metrics_df["sentiment_change"] = metrics_df.groupby("topic_id")["avg_sentiment"].diff().fillna(0.0)
+    metrics_df["controversy_change"] = metrics_df.groupby("topic_id")["controversy_score"].diff().fillna(0.0)
+    metrics_df["platform_spread_speed"] = metrics_df.groupby("topic_id")["platform_count"].diff().fillna(0.0)
     
     return metrics_df
