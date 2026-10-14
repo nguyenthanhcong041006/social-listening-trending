@@ -37,6 +37,25 @@ def compute_engagement_score(
         comments * weights.get("comments", 1.5)
     )
 
+def compute_log_follower_engagement(
+    likes: float,
+    shares: float,
+    comments: float,
+    followers: float = 0,
+    weights: Dict[str, float] = None,
+    platform_weight: float = 1.0
+) -> float:
+    """
+    Computes follower-normalized engagement rate scaled by log10:
+        EngagementRate = (w_likes*Likes + w_shares*Shares + w_comments*Comments) / log10(max(Followers, 100)) * PlatformWeight
+    Log10 scaling balances large fanpages (10^6 followers -> 6) and personal accounts (10^2 -> 2)
+    without over-penalizing legitimate mega-viral posts.
+    """
+    raw_engagement = compute_engagement_score(likes, shares, comments, weights)
+    followers_val = float(followers) if (followers is not None and not np.isnan(followers)) else 0.0
+    log_follower = float(np.log10(max(followers_val, 100.0)))
+    return float((raw_engagement / log_follower) * float(platform_weight))
+
 def compute_smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Symmetric Mean Absolute Percentage Error (sMAPE):

@@ -10,7 +10,7 @@ from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
 FEATURES_WITHOUT_SENTIMENT = [
     "topic_volume", "growth_rate", "acceleration", "volume_lag_1", "volume_lag_2", "volume_lag_3",
     "growth_rate_lag_1", "growth_rate_lag_2", "growth_rate_lag_3", "rolling_mean_volume_3",
-    "engagement", "engagement_lag_1", "engagement_lag_2", "rolling_mean_engagement_3",
+    "engagement", "log_follower_engagement", "views", "engagement_lag_1", "engagement_lag_2", "rolling_mean_engagement_3",
     "unique_users", "comment_to_like_ratio", "hashtag_growth",
     "platform_count", "cross_platform_entropy", "platform_spread_speed", "platform_count_lag_1",
     "fb_volume", "tiktok_volume", "yt_volume", "reddit_volume", "news_volume"
@@ -19,7 +19,8 @@ FEATURES_WITHOUT_SENTIMENT = [
 FEATURES_SENTIMENT_ONLY = [
     "avg_sentiment", "sentiment_change", "sentiment_volatility", "positive_ratio", "negative_ratio",
     "neutral_ratio", "controversy_score", "controversy_lag_1", "controversy_lag_2",
-    "sentiment_drop_acceleration", "rolling_mean_controversy_3", "sentiment_lag_1"
+    "sentiment_drop_acceleration", "rolling_mean_controversy_3", "sentiment_lag_1",
+    "uppercase_intensity"
 ]
 
 FEATURES_WITH_SENTIMENT = FEATURES_WITHOUT_SENTIMENT + FEATURES_SENTIMENT_ONLY

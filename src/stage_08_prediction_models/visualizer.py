@@ -197,7 +197,7 @@ def plot_calibration_curve(
     safe_savefig(plt, save_path, dpi=300)
     return fig, ax
 
-def plot_sarima_trajectory(
+def plot_arima_trajectory(
     history_times: List,
     history_volumes: List[float],
     forecast_times: List,
@@ -206,13 +206,13 @@ def plot_sarima_trajectory(
     save_path: Optional[str] = None
 ):
     """
-    Plots historical topic volume alongside SARIMA forecasted future trajectory.
+    Plots historical topic volume alongside ARIMA forecasted future trajectory.
     """
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.plot(history_times, history_volumes, marker="o", color="#3182bd", lw=2, label="Historical Volume")
-    ax.plot(forecast_times, forecast_volumes, marker="s", color="#de2d26", linestyle="--", lw=2, label="SARIMA Forecast")
+    ax.plot(forecast_times, forecast_volumes, marker="s", color="#de2d26", linestyle="--", lw=2, label="ARIMA Forecast")
     
-    ax.set_title(f"Topic Volume Time-Series & SARIMA Forecast: {topic_name}")
+    ax.set_title(f"Topic Volume Time-Series & ARIMA Forecast: {topic_name}")
     ax.set_xlabel("Time Bucket")
     ax.set_ylabel("Discussion Volume (Posts)")
     ax.legend(loc="upper left", frameon=True)
@@ -221,6 +221,8 @@ def plot_sarima_trajectory(
 
     safe_savefig(plt, save_path, dpi=300)
     return fig, ax
+
+plot_sarima_trajectory = plot_arima_trajectory
 
 def plot_comprehensive_evaluation_grid(
     y_true: np.ndarray,
@@ -592,13 +594,21 @@ def plot_ablation_study(
 # ==============================================================================
 
 MODEL_COLORS = {
-    "SARIMA + LightGBM": "#1f77b4",   # Deep Blue (Baseline)
-    "SARIMAX + LightGBM": "#2ca02c",  # Green
-    "SARIMA + XGBoost": "#ff7f0e",   # Orange
-    "SARIMAX + XGBoost": "#9467bd",  # Purple
+    "ARIMA + LightGBM": "#1f77b4",   # Deep Blue (Baseline)
+    "ARIMAX + LightGBM": "#2ca02c",  # Green
+    "ARIMA + XGBoost": "#ff7f0e",   # Orange
+    "ARIMAX + XGBoost": "#9467bd",  # Purple
+    "SARIMA + LightGBM": "#1f77b4",
+    "SARIMAX + LightGBM": "#2ca02c",
+    "SARIMA + XGBoost": "#ff7f0e",
+    "SARIMAX + XGBoost": "#9467bd",
 }
 
 MODEL_LINESTYLES = {
+    "ARIMA + LightGBM": "-",
+    "ARIMAX + LightGBM": "-.",
+    "ARIMA + XGBoost": "--",
+    "ARIMAX + XGBoost": ":",
     "SARIMA + LightGBM": "-",
     "SARIMAX + LightGBM": "-.",
     "SARIMA + XGBoost": "--",
@@ -785,12 +795,12 @@ def plot_model_comparison_radar(
     return fig, ax
 
 
-def plot_sarima_vs_sarimax_comparison(
+def plot_arima_vs_arimax_comparison(
     ts_metrics_df: pd.DataFrame,
     save_path: Optional[str] = None
 ):
     """
-    Compares Time-Series volume forecasting error between Univariate SARIMA and Exogenous SARIMAX:
+    Compares Time-Series volume forecasting error between Univariate ARIMA and Exogenous ARIMAX:
     - MAE (Mean Absolute Error)
     - RMSE (Root Mean Squared Error)
     - sMAPE (Symmetric Mean Absolute Percentage Error)
@@ -828,12 +838,14 @@ def plot_sarima_vs_sarimax_comparison(
             ax.set_ylabel("Value", fontsize=10)
             ax.grid(True, linestyle="--", alpha=0.5, axis="y")
 
-    fig.suptitle("Topic Volume Forecasting Accuracy: SARIMA vs. SARIMAX", fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle("Topic Volume Forecasting Accuracy: ARIMA vs. ARIMAX", fontsize=13, fontweight="bold", y=1.02)
     plt.tight_layout()
 
     safe_savefig(plt, save_path, dpi=300)
 
     return fig, axes
+
+plot_sarima_vs_sarimax_comparison = plot_arima_vs_arimax_comparison
 
 
 def plot_model_comparison_confusion_matrices(

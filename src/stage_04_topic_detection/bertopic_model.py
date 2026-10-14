@@ -39,23 +39,78 @@ class TopicDetector:
             verbose=True
         )
 
-    def fit_transform(self, df: pd.DataFrame, embeddings: np.ndarray, text_column: str = "cleaned_text"):
-        """Fits BERTopic on posts using precomputed embeddings, extracts sub-topics and hierarchical tree."""
+    def fit_transform(
+        self,
+        df: pd.DataFrame,
+        embeddings: np.ndarray,
+        text_column: str = "cleaned_text",
+        train_ratio: float = 0.70,
+        temporal_inductive: bool = True
+    ):
+        """
+        Fits BERTopic inductively to eliminate future temporal data leakage:
+        - If temporal_inductive=True and 'timestamp' is present:
+          Fits UMAP + HDBSCAN + c-TF-IDF exclusively on the Train Window (first 70% timeline).
+          Applies inductive .transform() to infer topics on Validation and Test windows.
+        - Otherwise, runs standard batch fit_transform.
+        """
         docs = df[text_column].tolist()
-        logger.info(f"Starting Hierarchical Topic Detection with {len(docs)} sports posts...")
+        n_samples = len(docs)
+        logger.info(f"Starting Topic Detection with {n_samples} sports posts (Inductive Temporal: {temporal_inductive})...")
         
-        topics, probs = self.topic_model.fit_transform(docs, embeddings=embeddings)
-        
-        # Outlier reduction and topic refinement via c-TF-IDF
-        outlier_count = sum(1 for t in topics if t == -1)
-        if outlier_count > 0:
-            logger.info(f"Refining topic assignments: reducing {outlier_count} outliers via c-TF-IDF...")
-            try:
-                reduced_topics = self.topic_model.reduce_outliers(docs, topics, strategy="c-tf-idf")
-                self.topic_model.update_topics(docs, topics=reduced_topics)
-                topics = reduced_topics
-            except Exception as e:
-                logger.warning(f"Outlier reduction skipped: {e}")
+        has_timestamp = "timestamp" in df.columns and df["timestamp"].notna().sum() > 10
+        if temporal_inductive and has_timestamp and train_ratio < 1.0:
+            df_sorted_times = sorted(pd.to_datetime(df["timestamp"]).unique())
+            cutoff_idx = int(len(df_sorted_times) * train_ratio)
+            train_cutoff = df_sorted_times[cutoff_idx]
+            is_train = pd.to_datetime(df["timestamp"]) <= train_cutoff
+            train_indices = np.where(is_train.values)[0]
+            val_test_indices = np.where(~is_train.values)[0]
+            
+            logger.info(f"Inductive Splitting: Fitting BERTopic on {len(train_indices)} Train posts (timeline <= {train_cutoff})...")
+            train_docs = [docs[i] for i in train_indices]
+            train_embeds = embeddings[train_indices]
+            
+            topics_train, probs_train = self.topic_model.fit_transform(train_docs, embeddings=train_embeds)
+            
+            # Reduce outliers on train set
+            outlier_count = sum(1 for t in topics_train if t == -1)
+            if outlier_count > 0:
+                logger.info(f"Refining train topic assignments: reducing {outlier_count} outliers via c-TF-IDF...")
+                try:
+                    reduced_topics = self.topic_model.reduce_outliers(train_docs, topics_train, strategy="c-tf-idf")
+                    self.topic_model.update_topics(train_docs, topics=reduced_topics)
+                    topics_train = reduced_topics
+                except Exception as e:
+                    logger.warning(f"Outlier reduction skipped on train: {e}")
+                    
+            topics = np.zeros(n_samples, dtype=int)
+            topics[train_indices] = topics_train
+            probs = np.ones(n_samples, dtype=float)
+            if probs_train is not None:
+                probs[train_indices] = np.max(probs_train, axis=1) if len(probs_train.shape) > 1 else probs_train
+            
+            if len(val_test_indices) > 0:
+                logger.info(f"Applying inductive .transform() on {len(val_test_indices)} Validation/Test posts...")
+                val_test_docs = [docs[i] for i in val_test_indices]
+                val_test_embeds = embeddings[val_test_indices]
+                topics_future, probs_future = self.topic_model.transform(val_test_docs, embeddings=val_test_embeds)
+                topics[val_test_indices] = topics_future
+                if probs_future is not None:
+                    probs[val_test_indices] = np.max(probs_future, axis=1) if len(probs_future.shape) > 1 else probs_future
+                    
+            topics = list(topics)
+        else:
+            # Fallback batch fit_transform
+            topics, probs = self.topic_model.fit_transform(docs, embeddings=embeddings)
+            outlier_count = sum(1 for t in topics if t == -1)
+            if outlier_count > 0:
+                try:
+                    reduced_topics = self.topic_model.reduce_outliers(docs, topics, strategy="c-tf-idf")
+                    self.topic_model.update_topics(docs, topics=reduced_topics)
+                    topics = reduced_topics
+                except Exception as e:
+                    logger.warning(f"Outlier reduction skipped: {e}")
         
         df = df.copy()
         df["topic_id"] = topics

@@ -1,6 +1,6 @@
 # Social Listening & Trend Prediction Pipeline
 
-An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction** system for the **Sports Domain** leveraging fine-tuned **Dual XLM-RoBERTa** models, **Hierarchical BERTopic** (Macro sports/leagues to Micro events/drama/scandals), time-series forecasting via **SARIMA & SARIMAX** (with multimodal cross-platform exogenous covariates), and gradient boosted decision trees (**LightGBM & XGBoost**).
+An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction** system for the **Sports Domain** leveraging fine-tuned **Dual XLM-RoBERTa** models, **Dynamic Hierarchical BERTopic** (Macro sports/leagues to Micro events/drama/scandals), time-series forecasting via **ARIMA & Direct Multi-Horizon ARIMAX** (with multimodal cross-platform exogenous covariates and EWMA burst smoothing), and gradient boosted decision trees (**LightGBM & XGBoost**).
 
 ---
 
@@ -45,7 +45,7 @@ The pipeline is scientifically engineered to provide empirical answers to 3 fund
   - *Micro Level*: Specific matches, player transfer sagas, referee controversies, and viral scandals.
 - **Cross-Platform Topic Tracking**: Quantifies cross-platform diffusion using **Normalized Shannon Entropy**, tracking how discussions spill over from niche forums into mainstream video platforms.
 - **Strict Chronological Data Splitting (70% - 20% - 10%)**: Guarantees zero temporal data leakage.
-- **Hybrid Prediction Suite (SARIMA/SARIMAX + LightGBM/XGBoost)**: Fuses univariate/multivariate time-series forecasts with social listening feature vectors to output ranked emerging trends and 24h persistence forecasts.
+- **Hybrid Prediction Suite (ARIMA/ARIMAX + LightGBM/XGBoost)**: Fuses univariate/multivariate time-series forecasts with social listening feature vectors to output ranked emerging trends and 24h early warning outlooks.
 
 ---
 
@@ -55,15 +55,14 @@ The pipeline is scientifically engineered to provide empirical answers to 3 fund
 flowchart TD
     %% Stage 1
     subgraph S1["Stage 1: Multi-Platform Data Collection & Ingestion"]
-        D1["Raw Posts across Facebook, TikTok, YouTube, Reddit, News<br/><i>Schema: text, timestamp, likes, shares, comments, views, followers, platform, sport_category</i>"]
+        D1["Raw Posts across Facebook, TikTok, YouTube, Reddit, News<br/><i>Schema: text, timestamp, likes, shares, comments, views, followers, platform</i>"]
     end
 
     %% Stage 2
     subgraph S2["Stage 2: Preprocessing & Sports Entity Protection"]
-        P1["Remove Duplicates"] --> P2["Remove Gambling & Betting Spam<br/><i>(kèo nhà cái, tỷ lệ cược, bot farms)</i>"]
-        P2 --> P3["Text Cleaning & URL Stripping"]
-        P3 --> P4["Text Normalization (NFKC, lowercase)"]
-        P4 --> P5["Preserve Sports Semantics & Slang<br/><i>(MU, VAR, C1, EPL, GOAT, player names, negation)</i>"]
+        P1["Remove Duplicates & Betting Spam"] --> P2["Text Cleaning & URL Stripping"]
+        P2 --> P3["Entity & Sports Slang Protection<br/><i>(Protect MU, VAR, C1, GOAT, Player Names)</i>"]
+        P3 --> P4["Cased & Uppercase Normalization<br/><i>(NFKC, Whitespace, No Lowercase for Cased XLM-R)</i>"]
     end
 
     %% Stage 3
@@ -74,50 +73,50 @@ flowchart TD
             MP --> CSE["Dense 768-dim Embeddings"]
         end
         subgraph BranchB["Branch B: Sentiment & Controversy Analysis"]
-            E2["XLM-RoBERTa Sentiment Classifier<br/><i>(Fine-tuned on Multilingual Sentiment)</i>"] --> SCH["Classification Head<br/><i>(Pos, Neg, Neu probabilities)</i>"]
+            E2["XLM-RoBERTa Sentiment Classifier<br/><i>(Cased Multilingual Sentiment & UPPERCASE Intensity)</i>"] --> SCH["Classification Head<br/><i>(Pos, Neg, Neu probabilities)</i>"]
             SCH --> SS["• Sentiment Score: S = P(pos) - P(neg)<br/>• Controversy Index (Polarization Debate)"]
         end
     end
 
     %% Stage 4
-    subgraph S4["Stage 4: Hierarchical Topic Detection (BERTopic)"]
-        T1["Embeddings"] --> T2["Clustering<br/><i>(UMAP 5D + HDBSCAN)</i>"]
-        T2 --> T3["c-TF-IDF Representation<br/><i>(with Sports Stopwords Filtering)</i>"]
+    subgraph S4["Stage 4: Dynamic Hierarchical Topic Detection"]
+        T1["Train-Window Fit (UMAP 5D + HDBSCAN)"] --> T2["Incremental / Online Topic Inference"]
+        T2 --> T3["c-TF-IDF Representation with Sports Stopwords"]
         T3 --> T4["Hierarchical Topic Tree<br/><b>Macro Leagues -> Micro Events & Drama</b>"]
     end
 
     %% Stage 5
     subgraph S5["Stage 5: Cross-Platform Topic Tracking"]
-        TT["Topic Metrics Over Time (Hourly / Daily):<br/>• Volume & Growth Rate &nbsp;&nbsp;• Platform Count & Cross-Platform Entropy<br/>• Platform Breakdown (FB, TT, YT, Reddit, News)<br/>• Sentiment Delta & Volatility &nbsp;&nbsp;• Controversy Score & Acceleration"]
+        TT["Topic Metrics Over Time (6-Hour Buckets):<br/>• Log-Follower Normalized Engagement Velocity<br/>• Platform-Weighted Interactions (FB, TT, YT, Reddit, News)<br/>• Cross-Platform Shannon Entropy & Spread Speed<br/>• Sentiment Volatility & Uppercase Controversy Spike"]
     end
 
     %% Stage 6
     subgraph S6["Stage 6: Feature Engineering & Early Trend Labeling"]
         direction LR
-        FE["Feature Extraction:<br/>• Volumetric Dynamics & Acceleration<br/>• Temporal Lags (1, 2, 3) & Rolling Stats<br/>• Cross-Platform Diffusion Features<br/>• Sentiment & Controversy Signals"]
-        LD["Ground-Truth Labeling:<br/>• Forward Lookahead Window (k=3)<br/>• Future Volume & Future Growth<br/><b>Trending = 1 / Not Trending = 0</b>"]
+        FE["Feature Extraction:<br/>• Volumetric Dynamics & Acceleration<br/>• Temporal Lags (1, 2, 3) & Rolling Stats<br/>• Cross-Platform Diffusion Features<br/>• Controversy & Uppercase Intensity Signals"]
+        LD["Ground-Truth Early Labeling:<br/>• Forward Lookahead (k=3 steps @ 6H = 18h Lead Time)<br/>• Future Volume & Future Growth Thresholds<br/><b>Trending = 1 / Not Trending = 0</b>"]
     end
 
     %% Stage 7
-    subgraph S7["Stage 7: Time-Based Data Splitting"]
-        Split["Strict Chronological Partitioning (No Shuffling):<br/>• Train (70%) &nbsp;&nbsp;• Validation (20%) &nbsp;&nbsp;• Test (10%)"]
+    subgraph S7["Stage 7: Time-Based Data Splitting with Embargo"]
+        Split["Strict Chronological Partitioning:<br/>• Train (70%) &nbsp;&nbsp;• Validation (20%) &nbsp;&nbsp;• Test (10%)<br/><b>with k-step Embargo Gap (Zero Boundary Leakage)</b>"]
     end
 
     %% Stage 8
     subgraph S8["Stage 8: Hybrid Prediction Models & Research Benchmarks"]
         direction TB
         subgraph Forecasting["Topic Volume Forecasting"]
-            SAR1["SARIMA (Univariate)"]
-            SAR2["SARIMAX (Exogenous Signals:<br/>Engagement, Sentiment, Controversy, Platform Count)"]
+            AR1["ARIMA (Short-horizon / Non-seasonal)"]
+            AR2["Direct Multi-Horizon ARIMAX<br/><i>(Real Lagged Exog: Log-Follower Engagement, Controversy, Entropy)</i>"]
         end
         subgraph Fusion["Feature Fusion Stream"]
-            F1["Social Listening Vector<br/><i>(With / Without Sentiment Subsets)</i>"]
-            F2["SARIMA / SARIMAX Forecasts"]
+            F1["Social Listening Vector"]
+            F2["Prospective ARIMAX Forecasts"]
             F1 & F2 --> F3["Combined Feature Vector"]
         end
         subgraph Classifiers["Classification Engines"]
-            LGB["LightGBM Classifier<br/><i>(Validation-Tuned θ*)</i>"]
-            XGB["XGBoost Classifier<br/><i>(Validation-Tuned θ*)</i>"]
+            LGB["LightGBM Classifier (Threshold θ*)"]
+            XGB["XGBoost Classifier (Threshold θ*)"]
         end
         subgraph ResearchBenchmarks["Research Benchmark Suite"]
             RQ1_B["<b>RQ1: Early Prediction Validation</b><br/>Lead Time vs Naive & Random"]
@@ -128,12 +127,12 @@ flowchart TD
         Forecasting --> Fusion --> Classifiers --> ResearchBenchmarks
     end
 
-    Out["Ranked Emerging Trends & 24h Persistence Outlook<br/>+ Benchmark CSV Tables & Publication Figures"]
+    Out["Ranked Emerging Trends & 24h Early Warning Outlook<br/>+ Benchmark CSV Tables & Publication Figures"]
 
     %% Connections
     D1 --> P1
-    P5 --> E1
-    P5 --> E2
+    P4 --> E1
+    P4 --> E2
     CSE --> T1
     SS --> TT
     T4 --> TT
@@ -181,7 +180,7 @@ social_listening/
 │
 ├── models/                             # Trained model weights and checkpoints (git-ignored)
 │   ├── bertopic/                       # Fitted Hierarchical BERTopic model artifact
-│   ├── sarima/ / sarimax/              # Fitted time-series forecasting models
+│   ├── arima/ / arimax/                # Fitted time-series forecasting models (ARIMA & ARIMAX)
 │   ├── lightgbm/ / xgboost/            # Trained gradient boosted classifiers
 │   └── xlm_roberta/                    # Fine-tuned XLM-RoBERTa versions (v1, v2,...) with automatic resolution
 │       ├── embedding/                  # Auto-versioned sentence embedding checkpoints (v1/, v2/,...)
@@ -212,9 +211,8 @@ social_listening/
 1. **Remove Duplicate**: Discards exact and textual duplicates.
 2. **Remove Gambling Spam**: Filters out sports betting promotions (`"kèo nhà cái"`, `"tỷ lệ kèo"`, `"soi kèo"`, etc.).
 3. **Text Cleaning & URL Removal**: Strips HTML tags, trims whitespaces, and removes promotional links.
-4. **Text Normalization**: Applies Unicode NFKC normalization, uniform lowercasing, and collapses character elongation (`yessssss` $
-ightarrow$ `yess`).
-5. **Preserve Semantic Information**: Retains hashtags, emojis, and protects sports-specific entities and slang (`"MU"`, `"VAR"`, `"C1"`, `"EPL"`, `"GOAT"`, `"Alcaraz"`, `"Sinner"`, player abbreviations, and negation tokens).
+4. **Sports Entity & Slang Protection**: Preserves hashtags, emojis, and protects sports-specific entities and slang (`"MU"`, `"VAR"`, `"C1"`, `"EPL"`, `"GOAT"`, player abbreviations, and negation tokens).
+5. **Cased Text Normalization**: Applies Unicode NFKC normalization, collapses character elongation (`yessssss` $\rightarrow$ `yess`), and retains natural casing (`lowercase: false`) to empower Cased XLM-RoBERTa and preserve UPPERCASE emotional arousal signals.
 
 ### Stage 3: Multilingual Representation & Sentiment Analysis (Dual XLM-RoBERTa)
 - **Branch A (Domain-Adapted Sentence Embeddings)**: Uses fine-tuned **XLM-RoBERTa Embedding Encoder** to generate 768-dim dense contextual sentence vectors via attention-masked Mean Pooling and L2 Normalization.
@@ -223,35 +221,37 @@ ightarrow$ `yess`).
   - **Controversy Polarization Index**: Measures heated fan debates in sports scandals:
     $$\text{Controversy} = \frac{2 \cdot \min(P_{\text{pos}}, P_{\text{neg}})}{P_{\text{pos}} + P_{\text{neg}} + \epsilon} \times (1 - P_{\text{neu}})$$
 
-### Stage 4: Hierarchical Topic Detection (Hierarchical BERTopic)
-1. Ingests domain-adapted sentence embeddings from Stage 3.
-2. Compresses embeddings using **UMAP** (5 components, cosine distance) and clusters with **HDBSCAN**.
-3. Applies **c-TF-IDF** with sports stopwords filtering to suppress generic terms (`"trận"`, `"hôm nay"`, `"video"`) and highlight core entities, tournaments, and drama keywords.
-4. Extracts a **Hierarchical Topic Tree** (`hierarchical_topics.csv`) connecting Macro sports/leagues down to Micro events, matches, and scandals.
+### Stage 4: Dynamic Hierarchical Topic Detection (Inductive BERTopic)
+1. **Train-Window Inductive Fitting**: Fits **UMAP** (5 components, cosine distance), **HDBSCAN**, and **c-TF-IDF** exclusively on historical Train Window ($t \le T_{\text{train}}$) to eliminate transductive future data leakage.
+2. **Online Inference on Validation & Test**: Applies inductive `.transform()` to assign future posts to existing topics, mapping unassigned outlier posts (-1) via online topic merging.
+3. **c-TF-IDF Representation**: Suppresses generic sports stopwords (`"trận"`, `"hôm nay"`, `"video"`) and highlights core entities, tournaments, and drama keywords.
+4. **Hierarchical Topic Tree**: Extracts `hierarchical_topics.csv` connecting Macro leagues down to Micro events, matches, and viral drama.
 
 ### Stage 5: Cross-Platform Topic Tracking
-Resamples posts into discrete temporal buckets (`1H` or `1D`), computing:
+Resamples posts into discrete 6-hour temporal buckets (`time_window: 6H`), avoiding data sparsity and computing:
 - **Topic Volume ($V_t$) & Growth Rate**: Post counts and percentage change.
+- **Log-Follower Normalized Engagement**: Balances mega-fanpages and personal accounts via $\log_{10}(\max(\text{Followers}, 100))$ weighted by platform influence ($W_{\text{platform}}$).
 - **Cross-Platform Diffusion**: 
   - `platform_count`: Number of active platforms discussing the topic.
   - `cross_platform_entropy`: Normalized Shannon Entropy measuring dispersion across channels.
   - Per-platform volumes (`fb_volume`, `tiktok_volume`, `yt_volume`, `reddit_volume`, `news_volume`).
-- **Engagement Dynamics**: Platform-weighted interaction score and `comment_to_like_ratio`.
-- **Sentiment & Controversy Dynamics**: Mean sentiment, `sentiment_volatility`, `controversy_score`, and their first/second derivatives (`acceleration`, `platform_spread_speed`).
+- **Sentiment & Controversy Dynamics**: Mean sentiment, `sentiment_volatility`, `controversy_score`, `uppercase_intensity` (shouting/anger ratio), and second derivatives (`acceleration`, `platform_spread_speed`).
 
 ### Stage 6: Feature Engineering & Early Trend Labeling
-- **Feature Extraction**: Constructs comprehensive vectors with Lags 1–3, rolling moving averages (3-step), acceleration, and multi-platform diffusion indicators.
+- **Feature Extraction**: Constructs comprehensive vectors with Lags 1–3, rolling moving averages (3-step), acceleration, multi-platform diffusion, and uppercase emotion intensity.
 - **Feature Sets Partitioning**: Automatically defines and exports `feature_sets_metadata.json` separating `FEATURES_WITH_SENTIMENT` and `FEATURES_WITHOUT_SENTIMENT` for downstream ablation studies.
-- **Early Prediction Ground-Truth Labeling**: Inspects forward lookahead window of $k=3$ steps. Assigns `Trending = 1` if future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `0`.
+- **Early Prediction Ground-Truth Labeling**: Inspects forward lookahead window of $k=3$ steps (18-hour lead time under 6H window). Assigns `Trending = 1` if future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `0`.
 
-### Stage 7: Time-Based Data Splitting
+### Stage 7: Time-Based Data Splitting with Embargo Gap
 - Arranges records strictly chronologically.
-- Partitions data into **Train (70%)**, **Validation (20%)**, and **Test (10%)** without temporal shuffling, preventing future lookahead bias.
+- Enforces a **$k$-step Embargo / Purge Gap** at the boundary of Train and Validation splits:
+  $$\text{Train Cutoff} = T_{\text{split}} - (k \times \Delta t)$$
+- Guarantees zero boundary label leakage between Train, Validation, and Test sets.
 
 ### Stage 8: Prediction Models & Research Benchmarks
-- **Volume Forecasting**: Univariate SARIMA vs. Multivariate SARIMAX (with exogenous engagement, sentiment, controversy, and platform count).
+- **Volume Forecasting**: Non-seasonal ARIMA vs. Direct Multi-Horizon ARIMAX (using genuinely observed lagged exogenous matrices $\mathbf{X}_{[t-k+1 : t]}$ and EWMA momentum for micro-drama burst series).
 - **Feature Fusion**: Merges social listening feature vectors with prospective forecast features.
-- **Gradient Boosted Classifiers**: Trains LightGBM and XGBoost with validation threshold optimization ($	heta^*$).
+- **Gradient Boosted Classifiers**: Trains LightGBM and XGBoost with validation threshold optimization ($\theta^*$).
 - **Automated Research Benchmark Suite**: Runs and exports results for:
   - **RQ1**: Early prediction lead time evaluation vs. Naive and Random baselines.
   - **RQ2**: Taxonomic feature importance ranking and SHAP explainability.
@@ -337,13 +337,14 @@ $$W_{t, c} = \|\text{tf}_{t, c}\| \times \log\left(1 + \frac{A}{\text{tf}_t}
 - **Acceleration**: $\text{Acceleration}_t = \text{Growth}_t - \text{Growth}_{t-1}$
 - **Sentiment Drop Acceleration**: $\Delta^2 S_t = (S_t - S_{t-1}) - (S_{t-1} - S_{t-2})$ (sharp negative spikes precede public crises).
 
-### 6.6. Weighted Engagement Score
-$$\text{Engagement} = w_{\text{likes}} \cdot \text{Likes} + w_{\text{shares}} \cdot \text{Shares} + w_{\text{comments}} \cdot \text{Comments}$$
+### 6.6. Log-Follower Normalized Engagement Rate
+$$\text{EngagementRate}_i = \frac{w_{\text{likes}} \cdot \text{Likes}_i + w_{\text{shares}} \cdot \text{Shares}_i + w_{\text{comments}} \cdot \text{Comments}_i}{\log_{10}(\max(\text{Followers}_i, 100))} \times W_{\text{platform}}$$
+- $\log_{10}$ scaling prevents over-penalizing mega-fanpages ($10^6 \rightarrow 6$) while eliminating outsized noise from small accounts ($10^2 \rightarrow 2$).
 
-### 6.7. Multivariate SARIMAX with Multi-Platform Exogenous Regressors
-For topic volume series $y_t$ with exogenous covariates vector $\vec{x}_t = [\text{Engagement}_t, S_t, \text{Controversy}_t, \text{PlatformCount}_t, \text{Entropy}_t]^T$:
-$$\Phi_p(B) \tilde{\Phi}_P(B^s) (1 - B)^d (1 - B^s)^D \left(y_t - \vec{\beta}^T \vec{x}_t
-\right) = \Theta_q(B) \tilde{\Theta}_Q(B^s) \epsilon_t$$
+### 6.7. Direct Multi-Horizon ARIMAX with Lagged Exogenous Signals
+For topic volume series $y_t$ with genuine lagged exogenous covariates $\vec{x}_{\tau} = [\text{EngagementRate}_{\tau}, S_{\tau}, \text{Controversy}_{\tau}, \text{Entropy}_{\tau}, \text{UppercaseIntensity}_{\tau}]^T$ observed up to time $t$:
+$$\Phi_p(B) (1 - B)^d \left(y_t - \vec{\beta}^T \vec{x}_{t-k}\right) = \Theta_q(B) \epsilon_t$$
+When forecasting $k$ steps ahead ($t+1 \dots t+k$), the model is driven by the real observed historical matrix $\mathbf{X}_{[t-k+1 : t]}$, guaranteeing zero future leakage and eliminating fabricated future values.
 
 ### 6.8. Academic Evaluation Metrics for Imbalanced Trend Detection
 - **Matthews Correlation Coefficient (MCC)**:
@@ -488,7 +489,7 @@ python main.py --stage 6
 # Stage 7: Chronological Data Splitting (70% Train, 20% Valid, 10% Test)
 python main.py --stage 7
 
-# Stage 8: 4-Way Multi-Model Research Benchmarking (SARIMA/SARIMAX + LightGBM/XGBoost)
+# Stage 8: 4-Way Multi-Model Research Benchmarking (ARIMA/ARIMAX + LightGBM/XGBoost)
 python main.py --stage 8
 ```
 
@@ -506,12 +507,12 @@ python main.py --stage 8
   - `model_comparison_radar.png`: Multi-dimensional radar/spider trade-off profiles
   - `model_comparison_confusion_matrices.png`: 2x2 grid of confusion matrices
   - `model_comparison_calibration.png`: Probability calibration (Reliability diagram)
-  - `sarima_vs_sarimax_forecasting.png`: Volume forecasting accuracy comparison (MAE, RMSE, sMAPE)
+  - `arima_vs_arimax_forecasting.png`: Volume forecasting accuracy comparison (MAE, RMSE, sMAPE)
 - **Predictions & Checkpoints**:
   - Ranked Trending Topics: `data/08_predictions/predicted_trending_topics.csv`
   - Full Test Set Predictions with Lifespan & 24h Outlook: `data/08_predictions/all_test_predictions.parquet`
   - Comprehensive Metrics JSON: `data/08_predictions/evaluation_metrics.json`
-  - Trained Model Checkpoints: `models/lightgbm/`, `models/xgboost/`, and `models/xlm_roberta/` (`v1`, `v2`,...)
+  - Trained Model Checkpoints: `models/arima/`, `models/arimax/`, `models/lightgbm/`, `models/xgboost/`, and `models/xlm_roberta/` (`v1`, `v2`,...)
 
 ---
 
@@ -638,7 +639,7 @@ All notebooks in [`notebooks/`](notebooks/) are pre-configured to use the projec
 | [`01_data_exploration_and_preprocessing.ipynb`](notebooks/01_data_exploration_and_preprocessing.ipynb) | **Stages 1 & 2** | Step-by-step raw data exploration, schema ingestion (`DataCollector`), deduplication (`remove_duplicates`), spam filtering (`filter_spam_and_bots`), text cleaning (`clean_text`), NFKC normalization (`normalize_text`), and semantic preservation (`preserve_semantic_information`). |
 | [`02_topic_modeling_bertopic.ipynb`](notebooks/02_topic_modeling_bertopic.ipynb) | **Stages 3 & 4** | Multilingual sentence representation via XLM-RoBERTa, sentiment score distribution, and BERTopic clustering analysis (UMAP + HDBSCAN + c-TF-IDF). |
 | [`03_trend_prediction_evaluation.ipynb`](notebooks/03_trend_prediction_evaluation.ipynb) | **Stages 5 to 8** | Topic metrics tracking over time, feature matrix construction, chronological split, time-series forecasting, gradient boosting classification, and evaluation curves. |
-| [`04_model_evaluation_and_visualization.ipynb`](notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and SARIMA trajectory plots. |
+| [`04_model_evaluation_and_visualization.ipynb`](notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and ARIMA/ARIMAX trajectory plots. |
 
 ### Selecting the Kernel in VS Code / IDE:
 

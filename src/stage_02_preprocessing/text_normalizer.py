@@ -29,10 +29,11 @@ def handle_repeated_characters(text: str, max_repeats: int = 2) -> str:
     pattern = re.compile(r"(.)\1{" + str(max_repeats) + r",}")
     return pattern.sub(r"\1" * max_repeats, text)
 
-def normalize_text(text: str, form: str = "NFKC", lowercase: bool = True, max_repeats: int = 2) -> str:
+def normalize_text(text: str, form: str = "NFKC", lowercase: bool = False, max_repeats: int = 2) -> str:
     """
     Step 5: Text Normalization
-    Unicode Normalization -> Case Normalization -> Repeated-Character Handling.
+    Unicode Normalization (NFKC) -> Optional Case Normalization -> Repeated-Character Handling.
+    Preserves natural casing by default for Cased Transformers (XLM-RoBERTa).
     """
     text = normalize_unicode(text, form=form)
     if lowercase:

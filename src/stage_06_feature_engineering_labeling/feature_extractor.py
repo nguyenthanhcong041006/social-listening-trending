@@ -48,6 +48,10 @@ def extract_social_features(df: pd.DataFrame) -> pd.DataFrame:
             df[f"platform_count_lag_{lag}"] = df.groupby("topic_id")["platform_count"].shift(lag).fillna(0.0)
         if "avg_sentiment" in df.columns:
             df[f"sentiment_lag_{lag}"] = df.groupby("topic_id")["avg_sentiment"].shift(lag).fillna(0.0)
+        if "log_follower_engagement" in df.columns:
+            df[f"log_follower_engagement_lag_{lag}"] = df.groupby("topic_id")["log_follower_engagement"].shift(lag).fillna(0.0)
+        if "uppercase_intensity" in df.columns:
+            df[f"uppercase_intensity_lag_{lag}"] = df.groupby("topic_id")["uppercase_intensity"].shift(lag).fillna(0.0)
 
     # 3. Rolling Statistics (3-step Moving Averages)
     df["rolling_mean_volume_3"] = (

@@ -27,14 +27,21 @@ class PreprocessingPipeline:
 
     def process_text_sample(self, text: str) -> str:
         """Executes text transformation pipeline on an individual text string."""
-        # Step 3 & 4: Text Cleaning & Remove URLs
+        # Step 3: Text Cleaning & Remove URLs
         text = clean_text(text, remove_url=True)
-        # Step 5: Text Normalization
-        text = normalize_text(text, form="NFKC", lowercase=True, max_repeats=2)
-        # Step 6: Preserve Semantic Information (Sports Slang, Negation, Emojis)
+        # Step 4: Preserve Semantic Information (Sports Slang, Canonical Entities, Negation, Emojis)
         demojize = self.sem_cfg.get("demojize", False)
         preserve_sports = self.sem_cfg.get("sports_slang_preservation", True)
         text = preserve_semantic_information(text, demojize=demojize, preserve_sports_slang=preserve_sports)
+        # Step 5: Cased Text Normalization (NFKC, character elongation collapse, no lowercase by default)
+        norm_cfg = self.config.get("text_normalization", {})
+        lowercase = norm_cfg.get("lowercase", False)
+        text = normalize_text(
+            text,
+            form=norm_cfg.get("unicode_form", "NFKC"),
+            lowercase=lowercase,
+            max_repeats=norm_cfg.get("max_repeated_chars", 2)
+        )
         return text
 
     def run(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -58,8 +65,10 @@ class PreprocessingPipeline:
             gambling_keywords=gambling_kw
         )
         
-        # Step 3, 4, 5, 6: Text Processing
-        logger.info("Executing text cleaning, normalization, and sports semantic preservation...")
+        # Step 3, 4, 5: Text Processing & Uppercase Emotional Signal Extraction
+        logger.info("Executing text cleaning, sports semantic preservation, and cased normalization...")
+        from .semantic_preserver import compute_uppercase_ratio
+        df["uppercase_ratio"] = df["text"].apply(compute_uppercase_ratio)
         df["cleaned_text"] = df["text"].apply(self.process_text_sample)
         
         # Drop samples where cleaned text is empty

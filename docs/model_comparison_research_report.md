@@ -94,16 +94,20 @@ SARIMAX + XGBoost & 0.3816 & 0.6522 & 0.4959 & 0.9524 & 0.5961 & 0.5574 & 0.0306
 
 ---
 
-## 5. Hiệu Năng Dự Báo Chuỗi Thời Gian: SARIMA vs. SARIMAX
+## 5. Hiệu Năng Dự Báo Chuỗi Thời Gian: ARIMA vs. ARIMAX (Direct Multi-Horizon)
 
-![So sánh sai số dự báo thể tích chủ đề giữa SARIMA và SARIMAX](./images/sarima_vs_sarimax_forecasting.png)
+![So sánh sai số dự báo thể tích chủ đề giữa ARIMA và ARIMAX](./images/sarima_vs_sarimax_forecasting.png)
 
-- Mô hình **SARIMAX** sử dụng thêm 4 biến ngoại sinh từ Social Listening:
-  - `engagement`: Động lượng tương tác có trọng số (likes, shares, comments)
-  - `avg_sentiment`: Điểm phân cực cảm xúc đa ngôn ngữ từ XLM-RoBERTa
-  - `hashtag_activity`: Tần suất lan truyền hashtag
-  - `unique_users`: Độ đa dạng người dùng thảo luận
-- Khi tích hợp vào nhánh dự báo, SARIMAX cung cấp đặc trưng tiên nghiệm xu hướng tương lai giúp bộ phân loại bắt trúng các bước nhảy khối lượng đột biến (*spikes*).
+- **Chuyển đổi phi mùa vụ (Non-seasonal Transition)**:
+  - Do đặc thù các vụ việc drama và sự kiện bùng nổ thể thao mang tính xung lực ngắn hạn (*bursty & transient dynamics*), chu kỳ mùa vụ tuần $s=7$ được lược bỏ nhằm tránh lỗi phân kỳ và giảm số lượng quan sát tối thiểu (`min_obs = 4`).
+- **Ma trận biến ngoại sinh trễ thực tế (Direct Multi-Horizon Lagged Exogenous Matrix)**:
+  - Khắc phục lỗ hổng toán học khi hàm `.forecast(steps=k)` yêu cầu biến ngoại sinh tương lai: Mô hình truyền trực tiếp ma trận $k$ bước thực tế $\mathbf{X}_{[t-k+1 : t]}$ gồm:
+    - `log_follower_engagement`: Động lượng tương tác khử thiên lệch quy mô kênh bằng $\log_{10}(\text{Followers})$.
+    - `avg_sentiment`: Điểm phân cực cảm xúc đa ngôn ngữ từ Cased XLM-RoBERTa.
+    - `controversy_score`: Chỉ số phân cực tranh luận giữa các nhóm người hâm mộ.
+    - `uppercase_intensity`: Tỷ lệ từ viết hoa thể hiện mức độ kích động/giận dữ của dư luận.
+    - `cross_platform_entropy`: Tốc độ lan truyền liên nền tảng.
+- Đối với các chủ đề mới chớm nở ($< 4$ quan sát), hệ thống kích hoạt cơ chế **Exponential Weighted Moving Average (EWMA) kết hợp đạo hàm gia tốc** để ngoại suy xu hướng thay vì suy thoái về giá trị trung bình tĩnh.
 
 ---
 
@@ -118,8 +122,9 @@ SARIMAX + XGBoost & 0.3816 & 0.6522 & 0.4959 & 0.9524 & 0.5961 & 0.5574 & 0.0306
 
 ## 7. Gợi ý Đưa Vào Bài Viết Nghiên Cứu (Paper Writing Insights)
 
-1. **Phân tích Kiến trúc Hybrid**: Nhấn mạnh đóng góp của việc kết hợp mô hình chuỗi thời gian thống kê (SARIMA/SARIMAX) với mô hình học máy cây tăng cường (LightGBM/XGBoost) trên không gian đặc trưng đa phương thức (NLP + Engagement + Temporal).
-2. **LightGBM vs. XGBoost**: 
-   - **LightGBM** nổi bật về khả năng phân loại xác suất tổng thể (ROC-AUC 0.635, PR-AUC 0.602, bắt trọn 100% trend).
-   - **XGBoost** có ưu thế hơn về độ cân bằng giữa các lớp phân cực (Macro-F1 0.382, Brier Score thấp hơn).
-3. **Giá trị của Biến Ngoại sinh (SARIMAX)**: Sự xuất hiện của các tín hiệu cảm xúc và tương tác người dùng đóng vai trò chỉ báo sớm (*leading indicator*) trước khi số lượng bài viết thật sự bùng nổ trên đồ thị chuỗi thời gian.
+1. **Phân tích Kiến trúc Hybrid**: Nhấn mạnh đóng góp của việc kết hợp mô hình chuỗi thời gian thống kê (ARIMA/ARIMAX) với mô hình học máy cây tăng cường (LightGBM/XGBoost) trên không gian đặc trưng đa phương thức (NLP + Engagement + Temporal).
+2. **Loại bỏ Hoàn toàn Data Leakage**:
+   - Sử dụng **Inductive BERTopic** (chỉ fit trên Train Window, transform trên Valid/Test).
+   - Thiết lập **$k$-step Embargo Gap** khi chia tập dữ liệu theo dòng thời gian để triệt tiêu hiện tượng rò rỉ nhãn tại ranh giới Train/Valid.
+3. **Bảo toàn Casing & Cảm xúc cực độ**: Giữ nguyên chữ hoa trong tiền xử lý để bảo vệ thực thể thể thao (MU, C1, VAR) và khai thác tín hiệu ALL-CAPS phản ánh sự phẫn nộ/tranh cãi gay gắt.
+4. **Giá trị của Biến Ngoại sinh Trễ (Direct Multi-Horizon ARIMAX)**: Sự xuất hiện của các tín hiệu cảm xúc và tương tác người dùng đóng vai trò chỉ báo sớm (*leading indicator*) trước khi số lượng bài viết thật sự bùng nổ trên đồ thị chuỗi thời gian.

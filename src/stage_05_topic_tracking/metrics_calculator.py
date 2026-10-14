@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
-from typing import Dict
-from src.utils.metrics_utils import compute_engagement_score, compute_growth_rate
+from typing import Dict, Optional
+from src.utils.metrics_utils import (
+    compute_engagement_score,
+    compute_log_follower_engagement,
+    compute_growth_rate
+)
 
 def compute_topic_tracking_metrics(
     grouped_df: pd.DataFrame,
-    engagement_weights: Dict[str, float] = None
+    engagement_weights: Dict[str, float] = None,
+    platform_weights: Dict[str, float] = None
 ) -> pd.DataFrame:
     """
     Topic Tracking Metrics with Cross-Platform & Sports Controversy Dimensions:
@@ -13,11 +18,19 @@ def compute_topic_tracking_metrics(
     1. Topic Volume: Post count within time bucket
     2. Growth Rate & Acceleration: Volume dynamics and second derivative
     3. Cross-Platform Diffusion: platform_count, cross_platform_entropy, per-platform volumes
-    4. Engagement & Comment-to-Like Ratio: Weighted interaction score and heated debate indicator
+    4. Engagement & Follower-Normalized Virality:
+       - engagement: Weighted interaction sum
+       - log_follower_engagement: Scaled by log10(max(Followers, 100)) and platform weights
+       - views: Video impressions across platforms
+       - comment_to_like_ratio: Heated debate indicator
     5. Sentiment Dynamics: Mean sentiment, sentiment change, sentiment volatility
-    6. Controversy Index: Polarized debate metric (critical for sports drama/scandals)
+    6. Controversy & Intensity Signals: Polarized debate metric and uppercase intensity
     7. Hashtag Activity & Unique Authors: Topic breadth and reach
     """
+    if platform_weights is None:
+        platform_weights = {
+            "facebook": 1.0, "tiktok": 0.8, "youtube": 1.2, "reddit": 1.5, "news": 2.0
+        }
     records = []
     
     for (topic_id, bucket), group in grouped_df.groupby(["topic_id", "time_bucket"]):
@@ -27,9 +40,27 @@ def compute_topic_tracking_metrics(
         comments = group["comments"].sum() if "comments" in group else 0
         views = group["views"].sum() if "views" in group else 0
         
-        # Standard weighted engagement
+        # Standard weighted engagement & follower-normalized engagement rate
         engagement = compute_engagement_score(likes, shares, comments, engagement_weights)
         comment_to_like_ratio = float(comments / (likes + 1.0))
+        
+        post_log_engs = []
+        for _, row in group.iterrows():
+            p_name = str(row.get("platform", "generic")).lower()
+            p_weight = platform_weights.get(p_name, 1.0)
+            fol = row.get("followers", 0)
+            post_log_engs.append(
+                compute_log_follower_engagement(
+                    likes=row.get("likes", 0),
+                    shares=row.get("shares", 0),
+                    comments=row.get("comments", 0),
+                    followers=fol,
+                    weights=engagement_weights,
+                    platform_weight=p_weight
+                )
+            )
+        log_follower_engagement = float(np.sum(post_log_engs))
+        uppercase_intensity = float(group["uppercase_ratio"].mean()) if "uppercase_ratio" in group else 0.0
         
         # Multi-platform diffusion metrics
         if "platform" in group:
@@ -93,7 +124,9 @@ def compute_topic_tracking_metrics(
             "time_bucket": bucket,
             "topic_volume": volume,
             "engagement": engagement,
+            "log_follower_engagement": log_follower_engagement,
             "views": views,
+            "uppercase_intensity": uppercase_intensity,
             "comment_to_like_ratio": comment_to_like_ratio,
             "platform_count": platform_count,
             "cross_platform_entropy": cross_platform_entropy,

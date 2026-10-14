@@ -6,8 +6,8 @@ from loguru import logger
 from sklearn.metrics import f1_score
 from typing import Dict, Any, Tuple, List
 
-from .sarima_forecaster import SARIMAForecaster
-from .sarimax_forecaster import SARIMAXForecaster
+from .arima_forecaster import ARIMAForecaster
+from .arimax_forecaster import ARIMAXForecaster
 from .feature_fusion import FeatureFusion
 from .lightgbm_model import LightGBMTrendPredictor
 from .xgboost_model import XGBoostTrendPredictor
@@ -39,13 +39,13 @@ from src.utils.metrics_utils import compute_mae, compute_rmse, compute_smape
 class PredictionPipeline:
     """
     Stage 8 Pipeline:
-    1. Topic Volume Forecasting (SARIMA & SARIMAX with Exogenous covariates)
+    1. Topic Volume Forecasting (ARIMA & ARIMAX with Exogenous covariates)
     2. Feature Fusion (Social Listening Features + Forecast Features)
     3. Multi-Model Hybrid Trend Prediction & Comparison:
-       - SARIMA + LightGBM (Baseline)
-       - SARIMAX + LightGBM
-       - SARIMA + XGBoost
-       - SARIMAX + XGBoost
+       - ARIMA + LightGBM (Baseline)
+       - ARIMAX + LightGBM
+       - ARIMA + XGBoost
+       - ARIMAX + XGBoost
     4. Comprehensive Multi-Model Benchmarking & Evaluation (Macro-F1, MCC, ROC-AUC, PR-AUC, etc.)
     5. Generation of Publication-Grade Research Plots & LaTeX Summary Table
     6. Ranked Emerging Trend Predictions & 24h Persistence Estimation
@@ -53,13 +53,15 @@ class PredictionPipeline:
 
     def __init__(self, config: dict = None):
         self.config = config or {}
-        sarima_cfg = self.config.get("sarima", {})
-        sarimax_cfg = self.config.get("sarimax", sarima_cfg)
+        arima_cfg = self.config.get("arima", self.config.get("sarima", {}))
+        arimax_cfg = self.config.get("arimax", self.config.get("sarimax", arima_cfg))
         lightgbm_cfg = self.config.get("lightgbm", {})
         xgboost_cfg = self.config.get("xgboost", {})
         
-        self.forecaster_sarima = SARIMAForecaster(sarima_cfg)
-        self.forecaster_sarimax = SARIMAXForecaster(sarimax_cfg)
+        self.forecaster_arima = ARIMAForecaster(arima_cfg)
+        self.forecaster_arimax = ARIMAXForecaster(arimax_cfg)
+        self.forecaster_sarima = self.forecaster_arima
+        self.forecaster_sarimax = self.forecaster_arimax
         self.fusion = FeatureFusion()
         
         self.lgb_config = lightgbm_cfg
@@ -90,54 +92,54 @@ class PredictionPipeline:
     ) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
         """
         Executes a rigorous 4-way benchmark comparing:
-        1. SARIMA + LightGBM
-        2. SARIMAX + LightGBM
-        3. SARIMA + XGBoost
-        4. SARIMAX + XGBoost
+        1. ARIMA + LightGBM
+        2. ARIMAX + LightGBM
+        3. ARIMA + XGBoost
+        4. ARIMAX + XGBoost
         """
         logger.info("==========================================================================")
-        logger.info("STARTING MULTI-MODEL RESEARCH BENCHMARK: SARIMA/SARIMAX + LightGBM/XGBoost")
+        logger.info("STARTING MULTI-MODEL RESEARCH BENCHMARK: ARIMA/ARIMAX + LightGBM/XGBoost")
         logger.info("==========================================================================")
 
         plots_dir = os.path.join(self.predictions_dir, "plots")
         comparison_plots_dir = os.path.join(plots_dir, "comparison")
         ensure_dir(os.path.join(comparison_plots_dir, ".gitkeep"))
 
-        # Step 1: Generate Forecast Features for both SARIMA and SARIMAX
-        logger.info("Generating SARIMA Univariate Forecast Features...")
+        # Step 1: Generate Forecast Features for both ARIMA and ARIMAX
+        logger.info("Generating ARIMA Univariate Forecast Features...")
         train_sarima = self.forecaster_sarima.generate_forecast_features(train_df)
         valid_sarima = self.forecaster_sarima.generate_forecast_features(valid_df)
         test_sarima = self.forecaster_sarima.generate_forecast_features(test_df)
 
-        logger.info("Generating SARIMAX Exogenous Forecast Features...")
+        logger.info("Generating ARIMAX Exogenous Forecast Features...")
         train_sarimax = self.forecaster_sarimax.generate_forecast_features(train_df)
         valid_sarimax = self.forecaster_sarimax.generate_forecast_features(valid_df)
         test_sarimax = self.forecaster_sarimax.generate_forecast_features(test_df)
 
-        # Step 2: Evaluate Time-Series Volume Forecasting (SARIMA vs SARIMAX)
+        # Step 2: Evaluate Time-Series Volume Forecasting (ARIMA vs ARIMAX)
         ts_comparison = []
         if "future_volume" in test_df.columns:
             y_true_vol = test_df["future_volume"].values
             
-            # SARIMA metrics
+            # ARIMA metrics
             y_pred_sarima = test_sarima["sarima_forecast_volume"].values
             sarima_mae = float(compute_mae(y_true_vol, y_pred_sarima))
             sarima_rmse = float(compute_rmse(y_true_vol, y_pred_sarima))
             sarima_smape = float(compute_smape(y_true_vol, y_pred_sarima))
             ts_comparison.append({
-                "forecaster": "SARIMA (Univariate)",
+                "forecaster": "ARIMA (Univariate)",
                 "mae": sarima_mae,
                 "rmse": sarima_rmse,
                 "smape": sarima_smape
             })
 
-            # SARIMAX metrics
+            # ARIMAX metrics
             y_pred_sarimax = test_sarimax["sarimax_forecast_volume"].values
             sarimax_mae = float(compute_mae(y_true_vol, y_pred_sarimax))
             sarimax_rmse = float(compute_rmse(y_true_vol, y_pred_sarimax))
             sarimax_smape = float(compute_smape(y_true_vol, y_pred_sarimax))
             ts_comparison.append({
-                "forecaster": "SARIMAX (Exogenous)",
+                "forecaster": "ARIMAX (Exogenous)",
                 "mae": sarimax_mae,
                 "rmse": sarimax_rmse,
                 "smape": sarimax_smape
@@ -151,13 +153,18 @@ class PredictionPipeline:
             try:
                 plot_sarima_vs_sarimax_comparison(
                     ts_df,
+                    save_path=os.path.join(comparison_plots_dir, "arima_vs_arimax_forecasting.png")
+                )
+                # Keep backward compatibility
+                plot_sarima_vs_sarimax_comparison(
+                    ts_df,
                     save_path=os.path.join(comparison_plots_dir, "sarima_vs_sarimax_forecasting.png")
                 )
             except Exception as e:
-                logger.warning(f"Could not plot SARIMA vs SARIMAX forecasting: {e}")
+                logger.warning(f"Could not plot ARIMA vs ARIMAX forecasting: {e}")
 
-        # Step 3: Feature Fusion for SARIMA and SARIMAX sets
-        logger.info("Fusing features for SARIMA and SARIMAX pipelines...")
+        # Step 3: Feature Fusion for ARIMA and ARIMAX sets
+        logger.info("Fusing features for ARIMA and ARIMAX pipelines...")
         X_train_sarima, feat_cols_sarima = self.fusion.fuse(train_sarima, forecaster_type="sarima", is_training=True)
         X_valid_sarima, _ = self.fusion.fuse(valid_sarima, forecaster_type="sarima", is_training=False)
         X_test_sarima, _ = self.fusion.fuse(test_sarima, forecaster_type="sarima", is_training=False)
@@ -172,7 +179,7 @@ class PredictionPipeline:
         # Step 4: Define the 4 model combinations
         model_combos = [
             {
-                "name": "SARIMA + LightGBM",
+                "name": "ARIMA + LightGBM",
                 "classifier_cls": LightGBMTrendPredictor,
                 "classifier_cfg": self.lgb_config,
                 "X_train": X_train_sarima,
@@ -183,7 +190,7 @@ class PredictionPipeline:
                 "save_dir": os.path.join(self.models_dir, "lightgbm")
             },
             {
-                "name": "SARIMAX + LightGBM",
+                "name": "ARIMAX + LightGBM",
                 "classifier_cls": LightGBMTrendPredictor,
                 "classifier_cfg": self.lgb_config,
                 "X_train": X_train_sarimax,
@@ -194,7 +201,7 @@ class PredictionPipeline:
                 "save_dir": os.path.join(self.models_dir, "lightgbm")
             },
             {
-                "name": "SARIMA + XGBoost",
+                "name": "ARIMA + XGBoost",
                 "classifier_cls": XGBoostTrendPredictor,
                 "classifier_cfg": self.xgb_config,
                 "X_train": X_train_sarima,
@@ -205,7 +212,7 @@ class PredictionPipeline:
                 "save_dir": os.path.join(self.models_dir, "xgboost")
             },
             {
-                "name": "SARIMAX + XGBoost",
+                "name": "ARIMAX + XGBoost",
                 "classifier_cls": XGBoostTrendPredictor,
                 "classifier_cfg": self.xgb_config,
                 "X_train": X_train_sarimax,
@@ -392,13 +399,30 @@ class PredictionPipeline:
         # ======================================================================
         # RESEARCH QUESTION BENCHMARKS & SENTIMENT ABLATION SUITE
         # ======================================================================
+        # Individual execution for each benchmark suite to ensure complete reporting
         try:
             self.run_rq1_early_prediction_benchmark(best_test_df, y_test, best_prob, best_pred)
-            self.run_rq2_feature_importance_benchmark(best_predictor, best_combo["feature_names"])
-            self.run_rq3_cross_platform_benchmark(train_sarimax, valid_sarimax, test_sarimax, y_train, y_valid, y_test)
-            self.run_sentiment_ablation(train_sarimax, valid_sarimax, test_sarimax, y_train, y_valid, y_test)
         except Exception as e:
-            logger.warning(f"Could not complete research benchmarks: {e}")
+            logger.warning(f"Could not complete RQ1 benchmark: {e}")
+
+        try:
+            self.run_rq2_feature_importance_benchmark(best_predictor, best_combo["feature_names"])
+        except Exception as e:
+            logger.warning(f"Could not complete RQ2 benchmark: {e}")
+
+        try:
+            self.run_rq3_cross_platform_benchmark(train_sarimax, valid_sarimax, test_sarimax, y_train, y_valid, y_test)
+        except Exception as e:
+            logger.warning(f"Could not complete RQ3 benchmark: {e}")
+
+        try:
+            ablation_df = self.run_sentiment_ablation(
+                train_sarima, valid_sarima, test_sarima,
+                train_sarimax, valid_sarimax, test_sarimax,
+                y_train, y_valid, y_test
+            )
+        except Exception as e:
+            logger.warning(f"Could not complete Sentiment Ablation benchmark: {e}")
 
         # Attach topic name if available
         topic_info_path = self.config.get("topic_info_path", "data/04_topics/topic_info.csv")
@@ -450,14 +474,14 @@ class PredictionPipeline:
         """
         Main execution entrypoint for Stage 8.
         If compare_models is True, runs the complete 4-model comparison and benchmark suite.
-        Otherwise falls back to standard baseline (SARIMA + LightGBM).
+        Otherwise falls back to standard baseline (ARIMA + LightGBM).
         """
         if self.compare_models:
             trending_topics, _, _ = self.run_model_comparison(train_df, valid_df, test_df)
             return trending_topics
         else:
-            # Single baseline run (SARIMA + LightGBM)
-            logger.info("Executing standard single baseline (SARIMA + LightGBM)...")
+            # Single baseline run (ARIMA + LightGBM)
+            logger.info("Executing standard single baseline (ARIMA + LightGBM)...")
             train_fc = self.forecaster_sarima.generate_forecast_features(train_df)
             valid_fc = self.forecaster_sarima.generate_forecast_features(valid_df)
             test_fc = self.forecaster_sarima.generate_forecast_features(test_df)
@@ -475,7 +499,7 @@ class PredictionPipeline:
             test_prob = predictor.predict_proba(X_test)
             test_pred = (test_prob >= th).astype(int)
 
-            metrics = evaluate_trend_predictions(y_test, test_pred, test_prob, model_name="SARIMA + LightGBM")
+            metrics = evaluate_trend_predictions(y_test, test_pred, test_prob, model_name="ARIMA + LightGBM")
             test_fc["predicted_trending"] = test_pred
             test_fc["trending_probability"] = test_prob
             test_fc = estimate_trend_duration_and_persistence(test_fc, threshold=th)
@@ -595,6 +619,8 @@ class PredictionPipeline:
         feat_df["category"] = feat_df["feature"].apply(categorize_feature)
         
         # Calculate percentage contribution
+        imp_col = "importance_gain" if "importance_gain" in feat_df.columns else ("importance" if "importance" in feat_df.columns else feat_df.columns[1])
+        feat_df["importance"] = feat_df[imp_col]
         total_importance = feat_df["importance"].sum()
         feat_df["importance_pct"] = (feat_df["importance"] / max(total_importance, 1e-6)) * 100.0
         feat_df["rank"] = range(1, len(feat_df) + 1)
@@ -685,9 +711,12 @@ class PredictionPipeline:
 
     def run_sentiment_ablation(
         self,
-        train_df: pd.DataFrame,
-        valid_df: pd.DataFrame,
-        test_df: pd.DataFrame,
+        train_sarima: pd.DataFrame,
+        valid_sarima: pd.DataFrame,
+        test_sarima: pd.DataFrame,
+        train_sarimax: pd.DataFrame,
+        valid_sarimax: pd.DataFrame,
+        test_sarimax: pd.DataFrame,
         y_train: np.ndarray,
         y_valid: np.ndarray,
         y_test: np.ndarray
@@ -712,20 +741,23 @@ class PredictionPipeline:
         no_sentiment_cols = [c for c in all_cols if c not in sentiment_cols]
         
         experiments = [
-            ("LightGBM [Without Sentiment]", LightGBMTrendPredictor, self.lgb_config, no_sentiment_cols),
-            ("LightGBM [With Sentiment]", LightGBMTrendPredictor, self.lgb_config, all_cols),
-            ("XGBoost [Without Sentiment]", XGBoostTrendPredictor, self.xgb_config, no_sentiment_cols),
-            ("XGBoost [With Sentiment]", XGBoostTrendPredictor, self.xgb_config, all_cols),
+            ("ARIMA + LightGBM [Without Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, LightGBMTrendPredictor, self.lgb_config, no_sentiment_cols),
+            ("ARIMA + LightGBM [With Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, LightGBMTrendPredictor, self.lgb_config, all_cols),
+            ("ARIMAX + LightGBM [Without Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, LightGBMTrendPredictor, self.lgb_config, no_sentiment_cols),
+            ("ARIMAX + LightGBM [With Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, LightGBMTrendPredictor, self.lgb_config, all_cols),
+            ("ARIMA + XGBoost [Without Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, XGBoostTrendPredictor, self.xgb_config, no_sentiment_cols),
+            ("ARIMA + XGBoost [With Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, XGBoostTrendPredictor, self.xgb_config, all_cols),
+            ("ARIMAX + XGBoost [Without Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, XGBoostTrendPredictor, self.xgb_config, no_sentiment_cols),
+            ("ARIMAX + XGBoost [With Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, XGBoostTrendPredictor, self.xgb_config, all_cols),
         ]
         
         records = []
-        base_f1_lgb = 0.0
-        base_f1_xgb = 0.0
+        base_f1_map = {}
         
-        for name, cls, cfg, cols in experiments:
-            X_tr, f_names = self.fusion.fuse(train_df, forecaster_type="sarimax", is_training=True, feature_subset=cols)
-            X_val, _ = self.fusion.fuse(valid_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
-            X_te, _ = self.fusion.fuse(test_df, forecaster_type="sarimax", is_training=False, feature_subset=cols)
+        for name, fc_type, tr_df, val_df, te_df, cls, cfg, cols in experiments:
+            X_tr, f_names = self.fusion.fuse(tr_df, forecaster_type=fc_type, is_training=True, feature_subset=cols)
+            X_val, _ = self.fusion.fuse(val_df, forecaster_type=fc_type, is_training=False, feature_subset=cols)
+            X_te, _ = self.fusion.fuse(te_df, forecaster_type=fc_type, is_training=False, feature_subset=cols)
             
             predictor = cls(cfg)
             predictor.train(X_tr, y_train, X_val, y_valid, X_te, y_test, feature_names=f_names)
@@ -735,16 +767,12 @@ class PredictionPipeline:
             
             m = evaluate_trend_predictions(y_test, preds, probs, model_name=name)
             
-            if "LightGBM [Without Sentiment]" in name:
-                base_f1_lgb = m["macro_f1"]
-                gain = 0.0
-            elif "LightGBM [With Sentiment]" in name:
-                gain = m["macro_f1"] - base_f1_lgb
-            elif "XGBoost [Without Sentiment]" in name:
-                base_f1_xgb = m["macro_f1"]
+            base_key = name.split(" [")[0]
+            if "[Without Sentiment]" in name:
+                base_f1_map[base_key] = m["macro_f1"]
                 gain = 0.0
             else:
-                gain = m["macro_f1"] - base_f1_xgb
+                gain = m["macro_f1"] - base_f1_map.get(base_key, 0.0)
                 
             records.append({
                 "model_variant": name,
@@ -764,6 +792,42 @@ class PredictionPipeline:
         ablation_path = os.path.join(self.predictions_dir, "sentiment_ablation_results.csv")
         save_dataframe(ablation_df, ablation_path)
         logger.info(f"Saved Sentiment Ablation benchmark results to: {ablation_path}")
+
+        # Generate comparative visualization for Sentiment Ablation
+        try:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(15, 6.5))
+            x_pos = np.arange(len(ablation_df))
+            width = 0.25
+
+            p1 = ax.bar(x_pos - width, ablation_df["macro_f1"], width, label="Macro-F1", color="#1f77b4", alpha=0.92)
+            p2 = ax.bar(x_pos, ablation_df["recall"], width, label="Recall", color="#2ca02c", alpha=0.92)
+            p3 = ax.bar(x_pos + width, ablation_df["roc_auc"], width, label="ROC-AUC", color="#ff7f0e", alpha=0.92)
+
+            for bars in [p1, p2, p3]:
+                for bar in bars:
+                    h = bar.get_height()
+                    ax.annotate(f"{h:.3f}", xy=(bar.get_x() + bar.get_width()/2, h),
+                                xytext=(0, 2), textcoords="offset points", ha="center", va="bottom", fontsize=7.5, fontweight="bold")
+
+            ax.set_xticks(x_pos)
+            labels = [v.replace(" [", "\n[") for v in ablation_df["model_variant"]]
+            ax.set_xticklabels(labels, fontsize=8.5, rotation=15, ha="right")
+            ax.set_ylabel("Metric Score", fontsize=11)
+            ax.set_title("Sentiment Ablation Benchmark: ARIMA/ARIMAX + LightGBM/XGBoost (With vs Without Sentiment)", fontsize=12.5, fontweight="bold")
+            ax.set_ylim([0.0, 1.1])
+            ax.legend(loc="upper left", frameon=True)
+            plt.tight_layout()
+
+            plots_dir = os.path.join(self.predictions_dir, "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+            chart_path = os.path.join(plots_dir, "sentiment_ablation_comparison.png")
+            plt.savefig(chart_path, dpi=300)
+            plt.close(fig)
+            logger.info(f"Saved Sentiment Ablation plot to: {chart_path}")
+        except Exception as e:
+            logger.warning(f"Could not generate sentiment ablation plot: {e}")
+
         return ablation_df
 
     def run_from_splits(self, splits_dir: str = "data/07_splits"):
