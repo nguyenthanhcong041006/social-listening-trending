@@ -136,12 +136,21 @@ def save_fine_tuned_checkpoint(
             base_dir = f"models/xlm_roberta/{task}"
 
     base_dir = resolve_output_path(base_dir)
-    os.makedirs(base_dir, exist_ok=True)
+    base_dir = os.path.abspath(os.path.normpath(base_dir))
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+    except OSError:
+        from pathlib import Path
+        Path(base_dir).mkdir(parents=True, exist_ok=True)
 
     # 1. Determine next version
     next_ver = get_next_version(base_dir)
-    version_dir = os.path.join(base_dir, next_ver)
-    os.makedirs(version_dir, exist_ok=True)
+    version_dir = os.path.abspath(os.path.normpath(os.path.join(base_dir, next_ver)))
+    try:
+        os.makedirs(version_dir, exist_ok=True)
+    except OSError:
+        from pathlib import Path
+        Path(version_dir).mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Saving fine-tuned {task} model to new version: {version_dir}")
 

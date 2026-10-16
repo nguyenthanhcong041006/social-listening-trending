@@ -21,18 +21,25 @@ def resolve_path(file_path: str) -> str:
     return file_path
 
 def resolve_output_path(file_path: str) -> str:
-    """Ensures output files are saved relative to the project root even if the working directory is notebooks/."""
+    """Ensures output files are saved relative to the project root even if the working directory is notebooks/ or scripts/."""
     if not file_path or os.path.isabs(file_path):
         return file_path
-    if os.path.basename(os.getcwd()) == "notebooks" and not file_path.startswith(".."):
+    cwd_name = os.path.basename(os.getcwd())
+    if cwd_name in ("notebooks", "scripts", "tests") and not file_path.startswith(".."):
         return os.path.join("..", file_path)
     return file_path
 
 def ensure_dir(file_path: str):
-    """Creates the parent directory if it does not already exist."""
+    """Creates the parent directory if it does not already exist with path normalization."""
     dir_path = os.path.dirname(file_path)
-    if dir_path and not os.path.exists(dir_path):
-        os.makedirs(dir_path, exist_ok=True)
+    if dir_path:
+        norm_dir = os.path.abspath(os.path.normpath(dir_path))
+        if not os.path.exists(norm_dir):
+            try:
+                os.makedirs(norm_dir, exist_ok=True)
+            except OSError:
+                from pathlib import Path
+                Path(norm_dir).mkdir(parents=True, exist_ok=True)
 
 def load_yaml(file_path: str) -> Dict[str, Any]:
     """Loads a YAML configuration file."""

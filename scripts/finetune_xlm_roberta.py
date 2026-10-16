@@ -29,8 +29,12 @@ from transformers import (
 from torch.optim import AdamW
 from loguru import logger
 
-# Add root directory to python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add root directory to python path and anchor working directory to project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+if os.path.basename(os.getcwd()) == "scripts":
+    os.chdir(PROJECT_ROOT)
 
 from src.stage_03_multilingual_sentiment.versioning import (
     save_fine_tuned_checkpoint,
