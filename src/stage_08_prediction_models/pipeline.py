@@ -74,12 +74,16 @@ class PredictionPipeline:
         self.time_to_trend_cfg = self.config.get("time_to_trend", {})
         self.time_to_trend_regressor = TimeToTrendRegressor(self.time_to_trend_cfg)
 
-    def _optimize_threshold(self, predictor, X_valid: np.ndarray, y_valid: np.ndarray) -> Tuple[float, float]:
-        """Tuning decision boundary threshold on validation set to optimize F1 score."""
+    def _optimize_threshold(self, predictor, X_valid: np.ndarray, y_valid: np.ndarray, min_threshold: float = 0.20) -> Tuple[float, float]:
+        """
+        Tuning decision boundary threshold on validation set to optimize F1 score.
+        Enforces a realistic lower bound (min_threshold=0.20) to prevent degenerate solutions
+        (e.g., predicting 100% positive alerts with 0% specificity).
+        """
         val_probs = predictor.predict_proba(X_valid)
         best_threshold = 0.5
         best_val_f1 = -1.0
-        for th in np.linspace(0.05, 0.85, 81):
+        for th in np.linspace(min_threshold, 0.80, 61):
             val_preds = (val_probs >= th).astype(int)
             val_f1 = f1_score(y_valid, val_preds, zero_division=0)
             if val_f1 > best_val_f1:
@@ -329,6 +333,10 @@ class PredictionPipeline:
                 table_img = os.path.join(self.predictions_dir, "model_comparison_table.png")
                 if os.path.exists(table_img):
                     shutil.copy2(table_img, os.path.join(docs_images_dir, "model_comparison_table.png"))
+                for extra_plot in ["time_to_trend_countdown.png", "time_to_trend_residuals.png"]:
+                    p_extra = os.path.join(plots_dir, extra_plot)
+                    if os.path.exists(p_extra):
+                        shutil.copy2(p_extra, os.path.join(docs_images_dir, extra_plot))
                 logger.info(f"Comparison images successfully synced to research docs folder: {docs_images_dir}")
             except Exception as e:
                 logger.warning(f"Could not sync comparison images to {docs_images_dir}: {e}")
@@ -396,6 +404,14 @@ class PredictionPipeline:
             self.time_to_trend_regressor.plot_time_to_trend_countdown(
                 best_test_df,
                 save_path=os.path.join(plots_dir, "time_to_trend_countdown.png")
+            )
+            self.time_to_trend_regressor.plot_time_to_trend_residuals(
+                y_true=y_test_hours,
+                y_pred=best_test_df["time_to_trend_hours"].values,
+                save_path=os.path.join(plots_dir, "time_to_trend_residuals.png")
+            )
+            self.time_to_trend_regressor.save_model(
+                os.path.join(self.models_dir, "time_to_trend", "time_to_trend_regressor.joblib")
             )
         except Exception as e:
             logger.error(f"Error executing Stage 2 Time-to-Trend Regressor: {e}")
@@ -506,6 +522,20 @@ class PredictionPipeline:
         if hasattr(best_predictor, "evals_result") and best_predictor.evals_result:
             with open(os.path.join(self.predictions_dir, "training_history.json"), "w", encoding="utf-8") as f:
                 json.dump(best_predictor.evals_result, f, indent=4)
+
+        # Persist dedicated Champion Model checkpoint and metadata in models/
+        try:
+            champ_path = os.path.join(self.models_dir, "champion_model.joblib")
+            best_predictor.save(champ_path)
+            with open(os.path.join(self.models_dir, "champion_metadata.json"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "best_model_name": best_model_name,
+                    "optimal_threshold": float(best_th),
+                    "feature_names": best_combo["feature_names"]
+                }, f, indent=4)
+            logger.info(f"Saved dedicated Champion Model ({best_model_name}) to {champ_path}")
+        except Exception as e:
+            logger.warning(f"Could not persist dedicated champion model: {e}")
 
         return trending_topics, metrics_dict, comparison_df
 

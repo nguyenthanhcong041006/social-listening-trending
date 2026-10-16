@@ -139,6 +139,18 @@ class TimeToTrendRegressor:
         
         if np.any(pos_mask) and self.is_fitted:
             X_pos = X_test[pos_mask]
+            
+            # Feature shape guard: align with expected features if dimension differs
+            expected_n = getattr(self.model, "n_features_in_", X_pos.shape[1])
+            if X_pos.shape[1] != expected_n:
+                if self.feature_names and isinstance(test_df, pd.DataFrame) and all(f in test_df.columns for f in self.feature_names):
+                    X_pos = test_df.loc[pos_mask, self.feature_names].values
+                elif X_pos.shape[1] > expected_n:
+                    X_pos = X_pos[:, :expected_n]
+                else:
+                    pad = np.zeros((X_pos.shape[0], expected_n - X_pos.shape[1]))
+                    X_pos = np.hstack([X_pos, pad])
+
             raw_hours = self.model.predict(X_pos)
             
             # Incorporate probability momentum scaling: topics with higher probability/acceleration erupt sooner
@@ -215,6 +227,7 @@ class TimeToTrendRegressor:
                          
         ax1.set_title("Stage 2: Time-to-Trend Urgency Breakdown", fontsize=12, fontweight="bold")
         ax1.set_ylabel("Number of Trending Topics", fontsize=11)
+        ax1.set_xticks(range(len(urgency_counts)))
         ax1.set_xticklabels(urgency_counts.index, rotation=18, ha="right", fontsize=9.5)
         ax1.grid(True, linestyle="--", alpha=0.5)
         
@@ -250,3 +263,94 @@ class TimeToTrendRegressor:
                 logger.warning(f"Could not save countdown plot: {e}")
                 
         return fig, axes
+
+    def plot_time_to_trend_residuals(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        save_path: Optional[str] = None
+    ):
+        """
+        Plots Ground-Truth vs Predicted Countdown Hours with ±3h and ±6h error bounds,
+        along with the prediction error residual distribution.
+        """
+        valid_mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
+        yt = y_true[valid_mask]
+        yp = y_pred[valid_mask]
+        
+        if len(yt) == 0:
+            logger.warning("No valid pairs for residual plotting.")
+            return None, None
+
+        residuals = yp - yt
+        mae = float(np.mean(np.abs(residuals)))
+        acc_6h = float(np.mean(np.abs(residuals) <= self.step_hours))
+
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
+
+        # Panel 1: Parity Plot (True vs Predicted)
+        ax1 = axes[0]
+        ax1.scatter(yt, yp, color="#1f77b4", edgecolor="black", s=65, alpha=0.85, zorder=4, label="Test Instances")
+        
+        # Identity line
+        min_v = max(3.0, min(float(np.min(yt)), float(np.min(yp))) - 2.0)
+        max_v = min(26.0, max(float(np.max(yt)), float(np.max(yp))) + 2.0)
+        line_pts = np.linspace(min_v, max_v, 100)
+        ax1.plot(line_pts, line_pts, color="#d62728", lw=2, linestyle="--", label="Ideal Parity (y = x)")
+        
+        # Error bands ±3h and ±6h
+        ax1.fill_between(line_pts, line_pts - 6.0, line_pts + 6.0, color="#2ca02c", alpha=0.12, label="±6h Tolerance (1 Step)")
+        ax1.fill_between(line_pts, line_pts - 3.0, line_pts + 3.0, color="#1f77b4", alpha=0.12, label="±3h Tolerance (0.5 Step)")
+        
+        ax1.set_xlim([min_v, max_v])
+        ax1.set_ylim([min_v, max_v])
+        ax1.set_title(f"Countdown Parity: Ground-Truth vs Predicted (MAE = {mae:.2f}h)", fontsize=12, fontweight="bold")
+        ax1.set_xlabel("Ground-Truth Hours to Trend Onset (h)", fontsize=11)
+        ax1.set_ylabel("Predicted Hours to Trend Onset (h)", fontsize=11)
+        ax1.legend(loc="upper left", frameon=True, fontsize=9.5)
+        ax1.grid(True, linestyle="--", alpha=0.5)
+
+        # Panel 2: Residual Error Distribution
+        ax2 = axes[1]
+        sns.histplot(residuals, kde=True, ax=ax2, color="#ff7f0e", bins=10, edgecolor="black", alpha=0.7)
+        ax2.axvline(x=0.0, color="#d62728", linestyle="--", lw=2, label="Zero Error (Residual = 0)")
+        ax2.axvline(x=-self.step_hours, color="#2ca02c", linestyle=":", lw=1.5, label=f"-{int(self.step_hours)}h Bound")
+        ax2.axvline(x=self.step_hours, color="#2ca02c", linestyle=":", lw=1.5, label=f"+{int(self.step_hours)}h Bound")
+        
+        ax2.set_title(f"Prediction Error Residuals (Accuracy ±6h = {acc_6h:.1%})", fontsize=12, fontweight="bold")
+        ax2.set_xlabel("Residual Error (Predicted - Ground-Truth) [hours]", fontsize=11)
+        ax2.set_ylabel("Frequency Count", fontsize=11)
+        ax2.legend(loc="upper right", frameon=True, fontsize=9.5)
+        ax2.grid(True, linestyle="--", alpha=0.5)
+
+        plt.tight_layout()
+
+        if save_path:
+            ensure_dir(save_path)
+            try:
+                plt.savefig(save_path, dpi=300, bbox_inches="tight")
+                logger.info(f"Saved Time-to-Trend Residual Plot to: {save_path}")
+            except Exception as e:
+                logger.warning(f"Could not save residual plot: {e}")
+
+        return fig, axes
+
+    def save_model(self, save_path: str):
+        """Saves fitted TimeToTrendRegressor to disk."""
+        import joblib
+        ensure_dir(save_path)
+        joblib.dump(self, save_path)
+        logger.info(f"Saved TimeToTrendRegressor to {save_path}")
+
+    @classmethod
+    def load_model(cls, load_path: str) -> Optional["TimeToTrendRegressor"]:
+        """Loads fitted TimeToTrendRegressor from disk if available."""
+        import joblib
+        if os.path.exists(load_path):
+            try:
+                reg = joblib.load(load_path)
+                logger.info(f"Loaded TimeToTrendRegressor from {load_path}")
+                return reg
+            except Exception as e:
+                logger.warning(f"Could not load TimeToTrendRegressor from {load_path}: {e}")
+        return None
