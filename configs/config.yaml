@@ -140,6 +140,7 @@ stage_06_feature_engineering_labeling:
     future_growth_threshold: 0.5
     future_volume_threshold: 5
     lead_time_steps: 3
+    step_hours: 6.0
 stage_07_time_based_split:
   train_ratio: 0.7
   valid_ratio: 0.2
@@ -147,6 +148,13 @@ stage_07_time_based_split:
   embargo_steps: 3
 stage_08_prediction_models:
   compare_models: true
+  time_to_trend:
+    enabled: true
+    model_type: xgboost_regressor
+    n_estimators: 100
+    learning_rate: 0.05
+    max_depth: 3
+    step_hours: 6.0
   sarima:
     order:
     - 1

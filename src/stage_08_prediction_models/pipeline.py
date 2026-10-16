@@ -33,6 +33,7 @@ from .visualizer import (
     export_model_comparison_table,
 )
 from .trend_duration import estimate_trend_duration_and_persistence
+from .time_to_trend_regressor import TimeToTrendRegressor
 from src.utils.file_io import save_dataframe, load_dataframe, ensure_dir
 from src.utils.metrics_utils import compute_mae, compute_rmse, compute_smape
 
@@ -70,6 +71,8 @@ class PredictionPipeline:
         self.predictions_dir = self.config.get("predictions_dir", "data/08_predictions")
         self.models_dir = self.config.get("models_dir", "models")
         self.compare_models = self.config.get("compare_models", True)
+        self.time_to_trend_cfg = self.config.get("time_to_trend", {})
+        self.time_to_trend_regressor = TimeToTrendRegressor(self.time_to_trend_cfg)
 
     def _optimize_threshold(self, predictor, X_valid: np.ndarray, y_valid: np.ndarray) -> Tuple[float, float]:
         """Tuning decision boundary threshold on validation set to optimize F1 score."""
@@ -360,6 +363,43 @@ class PredictionPipeline:
         # Estimate Trend Lifespan & 24h Persistence
         best_test_df = estimate_trend_duration_and_persistence(best_test_df, threshold=best_th)
 
+        # Stage 2: Two-Stage Cascade - Time-to-Trend Regressor (Estimating countdown to trend onset)
+        stage2_metrics = {}
+        try:
+            best_X_train = best_combo["X_train"]
+            best_X_test = best_combo["X_test"]
+            
+            y_train_hours = train_df["time_to_trend_hours"].values if "time_to_trend_hours" in train_df.columns else np.full(len(train_df), np.nan)
+            y_test_hours = test_df["time_to_trend_hours"].values if "time_to_trend_hours" in test_df.columns else np.full(len(test_df), np.nan)
+            
+            self.time_to_trend_regressor.train(
+                X_train=best_X_train,
+                y_train_hours=y_train_hours,
+                y_train_trending=y_train,
+                feature_names=best_combo["feature_names"]
+            )
+            
+            stage2_metrics = self.time_to_trend_regressor.evaluate(
+                X_test=best_X_test,
+                y_test_hours=y_test_hours,
+                y_test_trending=y_test
+            )
+            
+            best_test_df = self.time_to_trend_regressor.predict_cascade(
+                test_df=best_test_df,
+                X_test=best_X_test,
+                predicted_trending=best_pred,
+                probabilities=best_prob,
+                threshold=best_th
+            )
+            
+            self.time_to_trend_regressor.plot_time_to_trend_countdown(
+                best_test_df,
+                save_path=os.path.join(plots_dir, "time_to_trend_countdown.png")
+            )
+        except Exception as e:
+            logger.error(f"Error executing Stage 2 Time-to-Trend Regressor: {e}")
+
         # Standard plots for the primary/best model
         try:
             feat_imp = best_predictor.get_feature_importance()
@@ -454,10 +494,14 @@ class PredictionPipeline:
             "best_iteration": best_iter,
             "best_epoch": best_iter,
             "models_comparison": comparison_records,
-            "forecasting_comparison": ts_comparison
+            "forecasting_comparison": ts_comparison,
+            "two_stage_cascade_stage2_time_to_trend": stage2_metrics
         }
         with open(os.path.join(self.predictions_dir, "evaluation_metrics.json"), "w", encoding="utf-8") as f:
             json.dump(metrics_dict, f, indent=4)
+
+        with open(os.path.join(self.predictions_dir, "time_to_trend_metrics.json"), "w", encoding="utf-8") as f:
+            json.dump(stage2_metrics, f, indent=4)
 
         if hasattr(best_predictor, "evals_result") and best_predictor.evals_result:
             with open(os.path.join(self.predictions_dir, "training_history.json"), "w", encoding="utf-8") as f:
@@ -503,6 +547,14 @@ class PredictionPipeline:
             test_fc["predicted_trending"] = test_pred
             test_fc["trending_probability"] = test_prob
             test_fc = estimate_trend_duration_and_persistence(test_fc, threshold=th)
+            try:
+                y_tr_h = train_df["time_to_trend_hours"].values if "time_to_trend_hours" in train_df.columns else np.full(len(train_df), np.nan)
+                y_te_h = test_df["time_to_trend_hours"].values if "time_to_trend_hours" in test_df.columns else np.full(len(test_df), np.nan)
+                self.time_to_trend_regressor.train(X_train, y_tr_h, y_train, feature_names=cols)
+                self.time_to_trend_regressor.evaluate(X_test, y_te_h, y_test)
+                test_fc = self.time_to_trend_regressor.predict_cascade(test_fc, X_test, test_pred, test_prob, threshold=th)
+            except Exception as e:
+                logger.warning(f"Could not run time-to-trend in single-model mode: {e}")
 
             save_dataframe(test_fc, os.path.join(self.predictions_dir, "all_test_predictions.parquet"))
             trending = test_fc[test_fc["predicted_trending"] == 1].sort_values(by="trending_probability", ascending=False)

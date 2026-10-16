@@ -49,7 +49,8 @@ class FeatureAndLabelBuilder:
         labeling_cfg = self.config.get("labeling", {})
         self.future_window_steps = labeling_cfg.get("lead_time_steps", labeling_cfg.get("future_time_window_steps", 3))
         self.future_growth_threshold = labeling_cfg.get("future_growth_threshold", 0.5)
-        self.future_volume_threshold = labeling_cfg.get("future_volume_threshold", 20.0)
+        self.future_volume_threshold = labeling_cfg.get("future_volume_threshold", 5.0)
+        self.step_hours = float(labeling_cfg.get("step_hours", 6.0))
         self.output_path = self.config.get("output_path", "data/06_features_labels/features_and_labels.parquet")
         self.feature_sets_meta_path = "data/06_features_labels/feature_sets_metadata.json"
 
@@ -59,18 +60,21 @@ class FeatureAndLabelBuilder:
         # Branch 1: Multi-Platform Sports Feature Engineering
         featured_df = extract_social_features(tracked_metrics_df)
         
-        # Branch 2: Ground-Truth Early Prediction Labeling
+        # Branch 2: Ground-Truth Early Prediction Labeling (Two-Stage Cascade Formulation)
         labeled_df = generate_trending_labels(
             featured_df,
             future_window_steps=self.future_window_steps,
             future_growth_threshold=self.future_growth_threshold,
-            future_volume_threshold=self.future_volume_threshold
+            future_volume_threshold=self.future_volume_threshold,
+            step_hours=self.step_hours
         )
         
         trending_count = int((labeled_df["is_trending"] == 1).sum())
         total_count = len(labeled_df)
         trending_pct = trending_count / max(total_count, 1)
+        mean_hours = labeled_df.loc[labeled_df["is_trending"] == 1, "time_to_trend_hours"].mean()
         logger.info(f"Dataset creation complete. Total samples: {total_count}. Trending: {trending_count} ({trending_pct:.1%})")
+        logger.info(f"Stage 2 Time-to-Trend Onset Baseline: Average countdown = {mean_hours:.1f}h across positive instances.")
         
         # Save feature sets metadata for Stage 8 Ablations
         ensure_dir(self.feature_sets_meta_path)

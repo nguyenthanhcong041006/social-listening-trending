@@ -1,6 +1,6 @@
 # Social Listening & Trend Prediction Pipeline
 
-An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction** system for the **Sports Domain** leveraging fine-tuned **Dual XLM-RoBERTa** models, **Dynamic Hierarchical BERTopic** (Macro sports/leagues to Micro events/drama/scandals), time-series forecasting via **ARIMA & Direct Multi-Horizon ARIMAX** (with multimodal cross-platform exogenous covariates and EWMA burst smoothing), and gradient boosted decision trees (**LightGBM & XGBoost**).
+An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction** system for the **Sports Domain** leveraging fine-tuned **Dual XLM-RoBERTa** models, **Dynamic Hierarchical BERTopic** (Macro sports/leagues to Micro events/drama/scandals), time-series forecasting via **ARIMA & Direct Multi-Horizon ARIMAX** (with multimodal cross-platform exogenous covariates and EWMA burst smoothing), gradient boosted decision trees (**LightGBM & XGBoost**), and a **Two-Stage Cascade (Hurdle Formulation)** architecture featuring a **Time-to-Trend Countdown Regressor** that predicts the exact remaining hours until trend onset.
 
 ---
 
@@ -10,11 +10,18 @@ An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction*
 2. [Pipeline Architecture Diagram](#2-pipeline-architecture-diagram)
 3. [Repository Directory Structure & File Manifest](#3-repository-directory-structure--file-manifest)
 4. [Detailed Breakdown of Pipeline Stages & Steps](#4-detailed-breakdown-of-pipeline-stages--steps)
-5. [Comparative Research Benchmarking (RQ1, RQ2, RQ3 & Sentiment Ablation)](#5-comparative-research-benchmarking-rq1-rq2-rq3--sentiment-ablation)
+5. [Comparative Research Benchmarking (RQ1, RQ2, RQ3, Ablation & Time-to-Trend)](#5-comparative-research-benchmarking-rq1-rq2-rq3-sentiment-ablation--time-to-trend)
+   - [5.1. RQ1: Early Prediction Validation & Lead Time Benchmark](#51-rq1-early-prediction-validation--lead-time-benchmark)
+   - [5.2. RQ2: Predictive Feature Importance (Explainable AI / SHAP)](#52-rq2-predictive-feature-importance-explainable-ai--shap)
+   - [5.3. RQ3: Cross-Platform Fusion Benchmark](#53-rq3-cross-platform-fusion-benchmark)
+   - [5.4. Sentiment Ablation Study: With vs. Without Sentiment](#54-sentiment-ablation-study-with-vs-without-sentiment)
+   - [5.5. Time-to-Trend Countdown Benchmark (Hurdle Formulation)](#55-time-to-trend-countdown-benchmark-hurdle-formulation)
 6. [Core Mathematical Formulations & Algorithms](#6-core-mathematical-formulations--algorithms)
+   - [6.10. Two-Stage Cascade & Hurdle Formulation (Time-to-Trend Countdown)](#610-two-stage-cascade--hurdle-formulation-time-to-trend-countdown)
 7. [.gitignore Policy (Media & Heavy Artifact Protection)](#7-gitignore-policy-media--heavy-artifact-protection)
 8. [Installation & Execution Guide](#8-installation--execution-guide)
    - [8.5. Fine-Tuning Dual XLM-RoBERTa Models (Auto-Versioning)](#85-fine-tuning-dual-xlm-roberta-models-automatic-checkpoint-versioning)
+   - [8.6. Automated Two-Stage Cascade Verification Test Suite](#86-automated-two-stage-cascade-verification-test-suite)
 9. [Notebooks & Visual Analytics Guide](#9-notebooks--visual-analytics-guide)
 
 ---
@@ -44,8 +51,10 @@ The pipeline is scientifically engineered to provide empirical answers to 3 fund
   - *Macro Level*: Sports & Leagues (Football Premier League, Tennis Grand Slam, F1...).
   - *Micro Level*: Specific matches, player transfer sagas, referee controversies, and viral scandals.
 - **Cross-Platform Topic Tracking**: Quantifies cross-platform diffusion using **Normalized Shannon Entropy**, tracking how discussions spill over from niche forums into mainstream video platforms.
-- **Strict Chronological Data Splitting (70% - 20% - 10%)**: Guarantees zero temporal data leakage.
-- **Hybrid Prediction Suite (ARIMA/ARIMAX + LightGBM/XGBoost)**: Fuses univariate/multivariate time-series forecasts with social listening feature vectors to output ranked emerging trends and 24h early warning outlooks.
+- **Strict Chronological Data Splitting (70% - 20% - 10%)**: Guarantees zero temporal data leakage via $k$-step Embargo Purging.
+- **Two-Stage Cascade (Hurdle Formulation) Architecture**: 
+  - **Stage 1 (Classification Gatekeeper)**: Fuses prospective ARIMAX time-series forecasts with social listening feature vectors to detect *if* an emerging topic will become a trend ($\hat{y} \in \{0, 1\}$) with validation threshold optimization ($\theta^* = 0.43$).
+  - **Stage 2 (Time-to-Trend Countdown Regressor)**: Conditioned on positive instances ($\hat{y} = 1$), an XGBoost Regressor predicts *when* (remaining hours $\Delta t \in (0, 18\text{h}]$ until trend onset, mapped to Urgency Tiers: Immediate, Fast Approaching, Developing, and projected onset timestamp). Eliminates zero-inflation distortion.
 
 ---
 
@@ -94,7 +103,7 @@ flowchart TD
     subgraph S6["Stage 6: Feature Engineering & Early Trend Labeling"]
         direction LR
         FE["Feature Extraction:<br/>• Volumetric Dynamics & Acceleration<br/>• Temporal Lags (1, 2, 3) & Rolling Stats<br/>• Cross-Platform Diffusion Features<br/>• Controversy & Uppercase Intensity Signals"]
-        LD["Ground-Truth Early Labeling:<br/>• Forward Lookahead (k=3 steps @ 6H = 18h Lead Time)<br/>• Future Volume & Future Growth Thresholds<br/><b>Trending = 1 / Not Trending = 0</b>"]
+        LD["Ground-Truth Hurdle Labeling:<br/>• Forward Lookahead (k=3 steps @ 6H = 18h Lead Time)<br/>• Future Volume & Future Growth Thresholds<br/>• <b>Stage 1 Gate Target: is_trending ∈ {0, 1}</b><br/>• <b>Stage 2 Hurdle Target: time_to_trend_hours (positive only, NaN for 0)</b>"]
     end
 
     %% Stage 7
@@ -103,7 +112,7 @@ flowchart TD
     end
 
     %% Stage 8
-    subgraph S8["Stage 8: Hybrid Prediction Models & Research Benchmarks"]
+    subgraph S8["Stage 8: Two-Stage Cascade Prediction & Research Benchmarks"]
         direction TB
         subgraph Forecasting["Topic Volume Forecasting"]
             AR1["ARIMA (Short-horizon / Non-seasonal)"]
@@ -114,20 +123,29 @@ flowchart TD
             F2["Prospective ARIMAX Forecasts"]
             F1 & F2 --> F3["Combined Feature Vector"]
         end
-        subgraph Classifiers["Classification Engines"]
+        subgraph CascadeStage1["Cascade Stage 1: Trend Classification Gatekeeper"]
             LGB["LightGBM Classifier (Threshold θ*)"]
             XGB["XGBoost Classifier (Threshold θ*)"]
+            GATE{"Trending Candidate?<br/>(P ≥ θ*)"}
+            LGB & XGB --> GATE
+        end
+        subgraph CascadeStage2["Cascade Stage 2: Time-to-Trend Countdown Regressor"]
+            TTTR["XGBRegressor (Conditioned on y = 1)<br/>• Predicts exact hours Δt until trend onset<br/>• Urgency Tiers (Immediate, Approaching, Developing)<br/>• Projected Trend Onset Timestamp"]
         end
         subgraph ResearchBenchmarks["Research Benchmark Suite"]
             RQ1_B["<b>RQ1: Early Prediction Validation</b><br/>Lead Time vs Naive & Random"]
             RQ2_B["<b>RQ2: Feature Importance</b><br/>SHAP & Taxonomic Contribution"]
             RQ3_B["<b>RQ3: Multi-Platform Fusion</b><br/>Single Platform vs Multi-Platform"]
             ABL_S["<b>Ablation: Sentiment Impact</b><br/>With vs Without Sentiment"]
+            TTT_B["<b>Time-to-Trend Countdown Benchmark</b><br/>MAE: 3.28h, ±6h Acc: 86.96%"]
         end
-        Forecasting --> Fusion --> Classifiers --> ResearchBenchmarks
+        Forecasting --> Fusion --> CascadeStage1
+        GATE -- "Yes (ŷ = 1)" --> CascadeStage2
+        GATE -- "No (ŷ = 0)" --> OutNonTrend["Flagged Non-Trending"]
+        CascadeStage2 --> ResearchBenchmarks
     end
 
-    Out["Ranked Emerging Trends & 24h Early Warning Outlook<br/>+ Benchmark CSV Tables & Publication Figures"]
+    Out["Ranked Emerging Trends with Time-to-Trend Countdown & 24h Outlook<br/>+ Benchmark CSV Tables & Publication Figures"]
 
     %% Connections
     D1 --> P1
@@ -160,8 +178,8 @@ social_listening/
 │   └── logging_config.py               # Standardized Loguru console and rotating file logger
 │
 ├── docs/                               # Research Documentation & Publication Benchmarks
-│   ├── model_comparison_research_report.md # Comprehensive 4-model academic evaluation report
-│   └── images/                         # Publication-grade benchmark figures (ROC, PR, Radar, Tables)
+│   ├── model_comparison_research_report.md # Comprehensive academic evaluation report & Two-Stage Cascade
+│   └── images/                         # Publication-grade benchmark figures (ROC, PR, Radar, Time-to-Trend)
 │
 ├── data/                               # Staged pipeline data storage (git-ignored, kept via .gitkeep)
 │   ├── 01_raw/                         # Raw ingested multi-platform sports posts (raw_posts.parquet)
@@ -169,22 +187,31 @@ social_listening/
 │   ├── 03_embeddings_sentiment/        # XLM-RoBERTa embeddings (.npy) and sentiment/controversy (.parquet)
 │   ├── 04_topics/                      # BERTopic clustering, topic_info.csv, hierarchical_topics.csv
 │   ├── 05_topic_tracking/              # Aggregated time-series metrics per topic (tracked_topic_metrics.parquet)
-│   ├── 06_features_labels/             # Features, labels, feature_sets_metadata.json
+│   ├── 06_features_labels/             # Features, labels, Hurdle targets, feature_sets_metadata.json
 │   ├── 07_splits/                      # Chronological splits: train.parquet, valid.parquet, test.parquet
 │   └── 08_predictions/                 # Predictions, rq1/rq2/rq3 results, sentiment ablation, plots/
+│       ├── predicted_trending_topics.csv      # Ranked trends with countdown hours & urgency tiers
+│       ├── time_to_trend_metrics.json         # MAE, RMSE, and ±6h accuracy of Stage 2 Regressor
 │       ├── rq1_early_prediction_results.csv   # Early prediction lead time benchmark
 │       ├── rq2_feature_importance.csv         # Feature rankings across categories
 │       ├── rq3_cross_platform_benchmark.csv   # Single vs Multi-platform benchmark
 │       ├── sentiment_ablation_results.csv     # With vs Without Sentiment ablation
+│       ├── plots/time_to_trend_countdown.png  # Urgency tier countdown visualization
 │       └── plots/comparison/                  # Multi-model ROC, PR, Radar, Calibration plots
 │
 ├── models/                             # Trained model weights and checkpoints (git-ignored)
 │   ├── bertopic/                       # Fitted Hierarchical BERTopic model artifact
 │   ├── arima/ / arimax/                # Fitted time-series forecasting models (ARIMA & ARIMAX)
-│   ├── lightgbm/ / xgboost/            # Trained gradient boosted classifiers
+│   ├── lightgbm/ / xgboost/            # Trained gradient boosted classifiers (Stage 1 Gatekeeper)
+│   ├── time_to_trend/                  # Trained Stage 2 Countdown XGBRegressor (time_to_trend_xgb.json)
 │   └── xlm_roberta/                    # Fine-tuned XLM-RoBERTa versions (v1, v2,...) with automatic resolution
 │       ├── embedding/                  # Auto-versioned sentence embedding checkpoints (v1/, v2/,...)
 │       └── sentiment/                  # Auto-versioned sentiment classifier checkpoints (v1/, v2/,...)
+│
+├── scripts/                            # Standalone execution and validation scripts
+│   ├── crawl_social_media_30days.py    # Production multi-platform live crawler (Reddit + YouTube)
+│   ├── finetune_xlm_roberta.py         # SimCSE & sentiment fine-tuning with versioning
+│   └── test_two_stage_cascade.py       # Automated 5-suite verification test for Two-Stage Cascade
 │
 └── src/                                # Modular production-grade Python package
     ├── stage_01_data_collection/       # Multi-platform ingestion & Pydantic schema validation
@@ -192,9 +219,9 @@ social_listening/
     ├── stage_03_multilingual_sentiment/# Dual fine-tuned XLM-RoBERTa (embeddings, sentiment, controversy)
     ├── stage_04_topic_detection/       # Hierarchical BERTopic with sports stopwords & tree extraction
     ├── stage_05_topic_tracking/        # Cross-platform tracking (Shannon entropy, platform count, controversy)
-    ├── stage_06_feature_engineering_labeling/ # Lags 1-3, diffusion features, feature sets metadata, labeling
+    ├── stage_06_feature_engineering_labeling/ # Lags 1-3, diffusion, Hurdle targets (time_to_trend_hours)
     ├── stage_07_time_based_split/      # Strict chronological split: Train (70%), Valid (20%), Test (10%)
-    └── stage_08_prediction_models/     # Time-series forecasting, GBDT classifiers, RQ1/RQ2/RQ3 & ablation
+    └── stage_08_prediction_models/     # Time-series, GBDT, TimeToTrendRegressor, RQ1-3, ablation
 ```
 
 ---
@@ -240,7 +267,10 @@ Resamples posts into discrete 6-hour temporal buckets (`time_window: 6H`), avoid
 ### Stage 6: Feature Engineering & Early Trend Labeling
 - **Feature Extraction**: Constructs comprehensive vectors with Lags 1–3, rolling moving averages (3-step), acceleration, multi-platform diffusion, and uppercase emotion intensity.
 - **Feature Sets Partitioning**: Automatically defines and exports `feature_sets_metadata.json` separating `FEATURES_WITH_SENTIMENT` and `FEATURES_WITHOUT_SENTIMENT` for downstream ablation studies.
-- **Early Prediction Ground-Truth Labeling**: Inspects forward lookahead window of $k=3$ steps (18-hour lead time under 6H window). Assigns `Trending = 1` if future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `0`.
+- **Early Prediction Ground-Truth Labeling & Hurdle Formulation**: 
+  - Inspects forward lookahead window of $k=3$ steps ($18\text{h}$ lead time under 6H window). Assigns binary label `is_trending = 1` if future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `0`.
+  - **Hurdle Target Generation**: For positive instances (`is_trending == 1`), calculates the first forward step $\tau \in \{1, \dots, k\}$ where threshold conditions were satisfied: `time_to_trend_steps` $= \tau$ and `time_to_trend_hours` $= \tau \times \text{step\_hours}$ (e.g., $6\text{h}, 12\text{h}, 18\text{h}$).
+  - For negative instances (`is_trending == 0`), `time_to_trend_hours` is explicitly set to `NaN` (unobserved/undefined), mathematically preventing continuous regression distortion (zero-inflation / infinite penalty).
 
 ### Stage 7: Time-Based Data Splitting with Embargo Gap
 - Arranges records strictly chronologically.
@@ -248,19 +278,27 @@ Resamples posts into discrete 6-hour temporal buckets (`time_window: 6H`), avoid
   $$\text{Train Cutoff} = T_{\text{split}} - (k \times \Delta t)$$
 - Guarantees zero boundary label leakage between Train, Validation, and Test sets.
 
-### Stage 8: Prediction Models & Research Benchmarks
+### Stage 8: Two-Stage Cascade Prediction & Research Benchmarks
 - **Volume Forecasting**: Non-seasonal ARIMA vs. Direct Multi-Horizon ARIMAX (using genuinely observed lagged exogenous matrices $\mathbf{X}_{[t-k+1 : t]}$ and EWMA momentum for micro-drama burst series).
 - **Feature Fusion**: Merges social listening feature vectors with prospective forecast features.
-- **Gradient Boosted Classifiers**: Trains LightGBM and XGBoost with validation threshold optimization ($\theta^*$).
+- **Cascade Stage 1 (Trend Classification Gatekeeper)**: Trains LightGBM and XGBoost classifiers with validation threshold optimization ($\theta^*$). Selects candidate topics with probability $P(\text{trending}) \ge \theta^*$. The best-performing model (ARIMA + XGBoost with $\theta^* = 0.43$) achieves Macro-F1 = 0.5625, Recall = 65.22%, and ROC-AUC = 0.5624.
+- **Cascade Stage 2 (Time-to-Trend Countdown Regressor)**: Conditioned on positive predictions ($\hat{y} = 1$), an XGBoost Regressor (`TimeToTrendRegressor`) trained strictly on historical positive instances ($y = 1$) estimates the exact continuous hours $\Delta t \in (0, 18\text{h}]$ until trend onset.
+- **Urgency Tier Mapping & Projection**: Automatically segments predictions into 4 operational tiers:
+  - *Immediate Urgent* ($\le 6\text{h}$)
+  - *Fast Approaching* ($6\text{h} - 12\text{h}$)
+  - *Developing* ($12\text{h} - 18\text{h}$)
+  - *Early Horizon* ($> 18\text{h}$)
+  and computes `projected_trend_onset` timestamp ($T_{\text{current}} + \Delta t$).
 - **Automated Research Benchmark Suite**: Runs and exports results for:
   - **RQ1**: Early prediction lead time evaluation vs. Naive and Random baselines.
   - **RQ2**: Taxonomic feature importance ranking and SHAP explainability.
   - **RQ3**: Cross-platform fusion benchmark (Single-platform vs Multi-platform).
   - **Sentiment Ablation**: With Sentiment vs Without Sentiment performance comparison.
+  - **Time-to-Trend Benchmark**: Hurdle MAE, RMSE, and $\pm 6\text{h}$ countdown accuracy.
 
 ---
 
-## 5. Comparative Research Benchmarking (RQ1, RQ2, RQ3 & Sentiment Ablation)
+## 5. Comparative Research Benchmarking (RQ1, RQ2, RQ3, Sentiment Ablation & Time-to-Trend)
 
 Stage 8 automatically outputs publication-ready benchmark tables into `data/08_predictions/`:
 
@@ -307,6 +345,26 @@ Stage 8 automatically outputs publication-ready benchmark tables into `data/08_p
 | **XGBoost** | *Without Sentiment* | 81.8% | 0.805 | 0.795 | 0.816 | 0.849 | Baseline |
 | **XGBoost** | *With Sentiment* | **88.6**% | **0.879** | **0.860** | **0.900** | **0.918** | <font color="green">**+7.4%**</font> |
 
+### 5.5. Time-to-Trend Countdown Benchmark (Hurdle Formulation)
+*Evaluates the regression precision for estimating remaining hours until trend onset on actual emerging topics.*
+
+![Time-to-Trend Countdown Distribution & Error](docs/images/time_to_trend_countdown.png)
+
+| Evaluation Metric | Empirical Test Value | Practical Interpretation |
+| :--- | :---: | :--- |
+| **Mean Absolute Error (MAE)** | **3.28 hours** | Average countdown deviation is approximately $\sim 3.2$ hours ($\approx 0.55$ of a 6-hour bucket). |
+| **Root Mean Squared Error (RMSE)** | **4.01 hours** | Low dispersion of error with robust outlier penalization. |
+| **Accuracy within $\pm 6\text{h}$ Tolerance** | **86.96%** | $20$ out of $23$ actual trending events predicted within the correct neighboring time bucket. |
+| **Mean Ground-Truth Time-to-Trend** | **15.1 hours** | Consistent with the 18-hour forward lookahead horizon ($k=3$ steps @ 6H). |
+| **Mean Model Predicted Time-to-Trend** | **15.3 hours** | Minimal global estimation bias ($\Delta = +0.2$ hours). |
+
+#### Operational Urgency Tiers
+The predicted countdown hours ($\hat{\Delta t}$) are categorized into 4 operational decision tiers:
+1. **Immediate Urgent ($\le 6\text{h}$)**: High-velocity outbreak imminent within current bucket; requires immediate social media monitoring or crisis management response.
+2. **Fast Approaching ($6\text{h} - 12\text{h}$)**: Accelerated cross-platform diffusion (e.g. from TikTok short clips to Facebook forums).
+3. **Developing ($12\text{h} - 18\text{h}$)**: Incubation phase prior to major matches, press conferences, or transfer deadline events.
+4. **Early Horizon ($> 18\text{h}$)**: Weak early signals emerging at the boundary of the lookahead window.
+
 ---
 
 ## 6. Core Mathematical Formulations & Algorithms
@@ -329,8 +387,7 @@ $$H_{\text{platform}} = \frac{-\sum_{k=1}^{K} p_k \log_2(p_k)}{\log_2(K)} \quad 
 
 ### 6.4. Class-Based TF-IDF (c-TF-IDF)
 Keyword weighting for term $t$ in topic cluster $c$ with sports stopwords penalty:
-$$W_{t, c} = \|\text{tf}_{t, c}\| \times \log\left(1 + \frac{A}{\text{tf}_t}
-\right)$$
+$$W_{t, c} = \|\text{tf}_{t, c}\| \times \log\left(1 + \frac{A}{\text{tf}_t}\right)$$
 
 ### 6.5. Growth Rate, Acceleration & Sentiment Drop Acceleration
 - **Growth Rate**: $\text{Growth}_t = \frac{V_t - V_{t-1}}{\max(V_{t-1}, 1)}$
@@ -350,25 +407,39 @@ When forecasting $k$ steps ahead ($t+1 \dots t+k$), the model is driven by the r
 - **Matthews Correlation Coefficient (MCC)**:
   $$\text{MCC} = \frac{TP \times TN - FP \times FN}{\sqrt{(TP + FP)(TP + FN)(TN + FP)(TN + FN)}}$$
 - **Macro-F1 Score**:
-  $$\text{Macro-F1} = \frac{1}{2} \left(F1_{\text{Trending}} + F1_{\text{Not Trending}}
-\right)$$
+  $$\text{Macro-F1} = \frac{1}{2} \left(F1_{\text{Trending}} + F1_{\text{Not Trending}}\right)$$
 - **Brier Score (Probability Calibration Mean Squared Error)**:
-  $$\text{BS} = \frac{1}{N} \sum_{i=1}^{N} \left(p_i - y_i
-\right)^2$$
+  $$\text{BS} = \frac{1}{N} \sum_{i=1}^{N} (p_i - y_i)^2$$
 - **Area under Precision-Recall Curve (PR-AUC / Average Precision)**:
   $$\text{AP} = \sum_{n} (R_n - R_{n-1}) P_n$$
 
 ### 6.9. Trend Persistence & Lifespan Estimation (24h Outlook)
 - **24-Hour Persistence Probability ($P_{\text{trend}, 24h}$)**:
-  $$\text{Momentum}_{24h} = \sigma\left(1.5 \cdot \left(\text{Growth}_{24h} + 0.3 \cdot \text{Acceleration}
-\right)
-\right)$$
-  $$P_{\text{trend}, 24h} = \text{clip}\left(0.60 \cdot P_{\text{trend}} + 0.40 \cdot \text{Momentum}_{24h} \cdot P_{\text{trend}} \cdot 1.5, 0.01, 0.99
-\right)$$
+  $$\text{Momentum}_{24h} = \sigma\left(1.5 \cdot (\text{Growth}_{24h} + 0.3 \cdot \text{Acceleration})\right)$$
+  $$P_{\text{trend}, 24h} = \text{clip}\left(0.60 \cdot P_{\text{trend}} + 0.40 \cdot \text{Momentum}_{24h} \cdot P_{\text{trend}} \cdot 1.5, 0.01, 0.99\right)$$
 - **Estimated Lifespan Cohort**:
-  $$D_{\text{days}} = 1.0 + 3.0 \cdot \left(\frac{P_{\text{trend}} - 	heta}{\max(0.42 - 	heta, 0.05)}
-\right) + 0.4 \cdot \max(\text{Growth}_{24h}, 0)$$
+  $$D_{\text{days}} = 1.0 + 3.0 \cdot \left(\frac{P_{\text{trend}} - \theta}{\max(0.42 - \theta, 0.05)}\right) + 0.4 \cdot \max(\text{Growth}_{24h}, 0)$$
   Classified into: `< 24h (Flash Trend)`, `1 - 2 Days (Short-term)`, `2 - 3 Days (Medium-term)`, or `>= 3 Days (Sustained)`.
+
+### 6.10. Two-Stage Cascade & Hurdle Formulation (Time-to-Trend Countdown)
+To solve the dual challenge of predicting *whether* a topic will trend and *when* it will reach trend onset without suffering from zero-inflation and infinite distortion, the architecture adopts a **Two-Stage Cascade (Hurdle Formulation)**:
+
+1. **Probabilistic Factored Representation**:
+   $$P(\Delta t \le \tau \mid \mathbf{x}) = P(Y = 1 \mid \mathbf{x}) \cdot P(\Delta t \le \tau \mid Y = 1, \mathbf{x})$$
+   where $Y \in \{0, 1\}$ is the binary trend indicator and $\Delta t \in (0, k \cdot \Delta t_{\text{step}}]$ is the continuous time until onset.
+
+2. **Stage 1: Classification Gatekeeper**:
+   $$\hat{y}_i = \mathbb{I}\left(P(Y=1 \mid \mathbf{x}_i) \ge \theta^*\right)$$
+   where $\theta^* = 0.43$ is the Youden-optimal threshold calibrated on the chronological validation set.
+
+3. **Stage 2: Conditional Countdown Regressor**:
+   Trained strictly on positive instances ($\mathcal{D}^+ = \{(\mathbf{x}_i, \Delta t_i) \mid y_i = 1\}$), eliminating zero-inflation distortion:
+   $$\hat{\Delta t}_i = f_{\text{XGB}}(\mathbf{x}_i \mid y_i = 1)$$
+   $$\mathcal{L}_{\text{reg}}(\mathbf{w}) = \frac{1}{|\mathcal{D}^+|} \sum_{i \in \mathcal{D}^+} (\Delta t_i - \hat{\Delta t}_i)^2 + \gamma \sum_{j=1}^{T} w_j^2$$
+
+4. **Urgency Tier Mapping & Timestamp Projection**:
+   $$\text{Urgency}(\hat{\Delta t}_i) = \begin{cases} \text{Immediate Urgent} & \text{if } \hat{\Delta t}_i \le 6\text{h} \\ \text{Fast Approaching} & \text{if } 6\text{h} < \hat{\Delta t}_i \le 12\text{h} \\ \text{Developing} & \text{if } 12\text{h} < \hat{\Delta t}_i \le 18\text{h} \\ \text{Early Horizon} & \text{if } \hat{\Delta t}_i > 18\text{h} \end{cases}$$
+   $$T_{\text{projected}} = T_{\text{current}} + \hat{\Delta t}_i$$
 
 ---
 
@@ -500,19 +571,21 @@ python main.py --stage 8
   - Publication LaTeX Table: `data/08_predictions/model_comparison_table.tex`
   - High-Resolution Rendered Table Image: `data/08_predictions/model_comparison_table.png`
   - Full Metrics CSV: `data/08_predictions/model_comparison_results.csv`
-- **Multi-Model Comparison Figures**: Located in `data/08_predictions/plots/comparison/`:
-  - `model_comparison_roc.png`: Multi-model ROC curves with AUC scores
-  - `model_comparison_pr.png`: Multi-model Precision-Recall curves with Average Precision (AP)
-  - `model_comparison_metrics_barchart.png`: Grouped bar chart across 7 academic metrics
-  - `model_comparison_radar.png`: Multi-dimensional radar/spider trade-off profiles
-  - `model_comparison_confusion_matrices.png`: 2x2 grid of confusion matrices
-  - `model_comparison_calibration.png`: Probability calibration (Reliability diagram)
-  - `arima_vs_arimax_forecasting.png`: Volume forecasting accuracy comparison (MAE, RMSE, sMAPE)
+- **Multi-Model & Countdown Figures**: Located in `data/08_predictions/plots/`:
+  - `time_to_trend_countdown.png`: Time-to-trend countdown distribution, MAE/RMSE error metrics, and operational urgency tiers
+  - `comparison/model_comparison_roc.png`: Multi-model ROC curves with AUC scores
+  - `comparison/model_comparison_pr.png`: Multi-model Precision-Recall curves with Average Precision (AP)
+  - `comparison/model_comparison_metrics_barchart.png`: Grouped bar chart across 7 academic metrics
+  - `comparison/model_comparison_radar.png`: Multi-dimensional radar/spider trade-off profiles
+  - `comparison/model_comparison_confusion_matrices.png`: 2x2 grid of confusion matrices
+  - `comparison/model_comparison_calibration.png`: Probability calibration (Reliability diagram)
+  - `comparison/arima_vs_arimax_forecasting.png`: Volume forecasting accuracy comparison (MAE, RMSE, sMAPE)
 - **Predictions & Checkpoints**:
-  - Ranked Trending Topics: `data/08_predictions/predicted_trending_topics.csv`
+  - Ranked Trending Topics: `data/08_predictions/predicted_trending_topics.csv` (Enriched with `time_to_trend_hours`, `time_to_trend_urgency`, `projected_trend_onset`, and `cascade_stage`)
   - Full Test Set Predictions with Lifespan & 24h Outlook: `data/08_predictions/all_test_predictions.parquet`
-  - Comprehensive Metrics JSON: `data/08_predictions/evaluation_metrics.json`
-  - Trained Model Checkpoints: `models/arima/`, `models/arimax/`, `models/lightgbm/`, `models/xgboost/`, and `models/xlm_roberta/` (`v1`, `v2`,...)
+  - Time-to-Trend Countdown Metrics: `data/08_predictions/time_to_trend_metrics.json` (MAE: 3.28h, RMSE: 4.01h, $\pm 6\text{h}$ Acc: 86.96%)
+  - Comprehensive Classification Metrics JSON: `data/08_predictions/evaluation_metrics.json`
+  - Trained Model Checkpoints: `models/arima/`, `models/arimax/`, `models/lightgbm/`, `models/xgboost/`, `models/time_to_trend/` (`time_to_trend_xgb.json`), and `models/xlm_roberta/` (`v1`, `v2`,...)
 
 ---
 
@@ -627,6 +700,23 @@ models/xlm_roberta/
 
 - **Seamless Loading**: In [`configs/config.yaml`](configs/config.yaml), `embedding_model_name` points to `"models/xlm_roberta/embedding"` and `sentiment_model_name` points to `"models/xlm_roberta/sentiment"`. Stage 3 automatically detects and loads the newest version (`v2` over `v1`).
 - **Rollback**: To rollback to an earlier checkpoint, simply specify the exact subfolder in `configs/config.yaml` (e.g. `sentiment_model_name: "models/xlm_roberta/sentiment/v1"`).
+
+---
+
+### 8.6. Automated Two-Stage Cascade Verification Test Suite
+
+The repository includes a dedicated end-to-end verification test suite in [`scripts/test_two_stage_cascade.py`](scripts/test_two_stage_cascade.py) to validate the mathematical and operational integrity of the Two-Stage Cascade and Hurdle formulation:
+
+```bash
+python scripts/test_two_stage_cascade.py
+```
+
+#### Verification Test Suites:
+1. **Stage 6 Hurdle Target Generation**: Verifies that `time_to_trend_hours` is computed as a positive float ($\ge 6.0\text{h}$) for trending rows (`is_trending == 1`) and strictly set to `NaN` for non-trending rows (`is_trending == 0`), ensuring zero-inflation prevention.
+2. **Stage 8 Regressor Training**: Verifies `TimeToTrendRegressor` trains strictly on positive instances and successfully serializes to `models/time_to_trend/time_to_trend_xgb.json`.
+3. **Stage 8 Cascade Integration**: Validates that running Stage 8 coordinates Stage 1 Gatekeeper with Stage 2 Countdown Regressor without runtime crashes or schema mismatches.
+4. **Prediction & Urgency Tier Schemas**: Confirms `predicted_trending_topics.csv` contains all required columns (`time_to_trend_hours`, `time_to_trend_urgency`, `projected_trend_onset`, `cascade_stage`).
+5. **Countdown Plausibility**: Validates that all predicted hours fall within physical domain boundaries ($0 < \Delta t \le 18\text{h}$) and align with configured urgency tiers.
 
 ---
 

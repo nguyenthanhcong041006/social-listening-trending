@@ -29,6 +29,7 @@ from .visualizer import (
 )
 from .pipeline import PredictionPipeline
 from .trend_duration import estimate_trend_duration_and_persistence
+from .time_to_trend_regressor import TimeToTrendRegressor
 
 __all__ = [
     "ARIMAForecaster",
@@ -60,4 +61,5 @@ __all__ = [
     "export_model_comparison_table",
     "PredictionPipeline",
     "estimate_trend_duration_and_persistence",
+    "TimeToTrendRegressor",
 ]
