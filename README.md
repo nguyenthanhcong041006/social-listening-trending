@@ -8,25 +8,25 @@ An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction*
 
 1. [Project Overview & Core Research Questions](#1-project-overview)
 2. [Pipeline Architecture Diagram](#2-pipeline-architecture-diagram)
-3. [Repository Directory Structure & File Manifest](#3-repository-directory-structure--file-manifest)
-4. [Detailed Breakdown of Pipeline Stages & Steps](#4-detailed-breakdown-of-pipeline-stages--steps)
-5. [Comparative Research Benchmarking (RQ1, RQ2, RQ3, Ablation & Time-to-Trend)](#5-comparative-research-benchmarking-rq1-rq2-rq3-sentiment-ablation--time-to-trend)
-   - [5.1. RQ1: Early Prediction Validation & Lead Time Benchmark](#51-rq1-early-prediction-validation--lead-time-benchmark)
-   - [5.2. RQ2: Predictive Feature Importance (Explainable AI / SHAP)](#52-rq2-predictive-feature-importance-explainable-ai--shap)
+3. [Repository Directory Structure & File Manifest](#3-repository-directory-structure-file-manifest)
+4. [Detailed Breakdown of Pipeline Stages & Steps](#4-detailed-breakdown-of-pipeline-stages-steps)
+5. [Comparative Research Benchmarking (RQ1, RQ2, RQ3, Sentiment Ablation & Time-to-Trend)](#5-comparative-research-benchmarking-rq1-rq2-rq3-sentiment-ablation-time-to-trend)
+   - [5.1. RQ1: Early Prediction Validation & Lead Time Benchmark](#51-rq1-early-prediction-validation-lead-time-benchmark)
+   - [5.2. RQ2: Predictive Feature Importance (Explainable AI / SHAP)](#52-rq2-predictive-feature-importance-explainable-ai-shap)
    - [5.3. RQ3: Cross-Platform Fusion Benchmark](#53-rq3-cross-platform-fusion-benchmark)
    - [5.4. Sentiment Ablation Study: With vs. Without Sentiment](#54-sentiment-ablation-study-with-vs-without-sentiment)
    - [5.5. Time-to-Trend Countdown Benchmark (Hurdle Formulation)](#55-time-to-trend-countdown-benchmark-hurdle-formulation)
-6. [Core Mathematical Formulations & Algorithms](#6-core-mathematical-formulations--algorithms)
-   - [6.10. Two-Stage Cascade & Hurdle Formulation (Time-to-Trend Countdown)](#610-two-stage-cascade--hurdle-formulation-time-to-trend-countdown)
-7. [.gitignore Policy (Media & Heavy Artifact Protection)](#7-gitignore-policy-media--heavy-artifact-protection)
-8. [Installation & Execution Guide](#8-installation--execution-guide)
+6. [Core Mathematical Formulations & Algorithms](#6-core-mathematical-formulations-algorithms)
+   - [6.10. Two-Stage Cascade & Hurdle Formulation (Time-to-Trend Countdown)](#610-two-stage-cascade-hurdle-formulation-time-to-trend-countdown)
+7. [.gitignore Policy (Media & Heavy Artifact Protection)](#7-gitignore-policy-media-heavy-artifact-protection)
+8. [Installation & Execution Guide](#8-installation-execution-guide)
    - [8.1. Environment Setup](#81-environment-setup)
-   - [8.2. Dataset Generation & Multi-Platform Crawler](#82-dataset-generation--multi-platform-crawler)
+   - [8.2. Dataset Generation & Multi-Platform Crawler](#82-dataset-generation-multi-platform-crawler)
    - [8.3. Pipeline Configuration](#83-pipeline-configuration)
-   - [8.4. Running the Pipeline via CLI (main.py)](#84-running-the-pipeline-via-cli)
-   - [8.5. Fine-Tuning Dual XLM-RoBERTa Models (Auto-Versioning)](#85-fine-tuning-dual-xlm-roberta-models-automatic-checkpoint-versioning)
-   - [8.6. Verification & Interactive Testing Scripts](#86-verification--interactive-testing-scripts)
-9. [Notebooks & Visual Analytics Guide](#9-notebooks--visual-analytics-guide)
+   - [8.4. Running the Pipeline via CLI](#84-running-the-pipeline-via-cli)
+   - [8.5. Fine-Tuning Dual XLM-RoBERTa Models (Automatic Checkpoint Versioning)](#85-fine-tuning-dual-xlm-roberta-models-automatic-checkpoint-versioning)
+   - [8.6. Verification & Interactive Testing Scripts](#86-verification-interactive-testing-scripts)
+9. [Notebooks & Visual Analytics Guide](#9-notebooks-visual-analytics-guide)
 
 ---
 
@@ -40,7 +40,7 @@ The pipeline is scientifically engineered to provide empirical answers to 3 fund
 
 1. **Research Question 1 (RQ1)**: _Can trending topics be predicted early from currently observed signals?_
    - Validates whether early-stage momentum, fan debates, and cross-platform ripples observed at time $t$ can reliably predict volume explosion at forward lookahead horizons $t+k$ ($k=3$ steps ahead).
-   - Measures **Early Lead Time** and compares against Naive Persistence and Random Baselines.
+   - Measures **Early Lead Time** and benchmarks against Random Forest and Random Baselines.
 2. **Research Question 2 (RQ2)**: _Which features are most useful for trend prediction?_
    - Decomposes feature importance into 4 taxonomic categories: _Volumetric Dynamics, Engagement & Virality, Cross-Platform Diffusion, and Sentiment & Controversy_.
    - Employs **SHAP (SHapley Additive exPlanations)** to explain what signals trigger early trend warnings.
@@ -608,7 +608,7 @@ python scripts/crawl_social_media_30days.py
 
 ---
 
-### 8.3. Configuration
+### 8.3. Pipeline Configuration
 
 All hyperparameters, file paths, model configurations, and thresholds are centrally controlled in [`configs/config.yaml`](configs/config.yaml).
 
@@ -670,15 +670,15 @@ python main.py --stage 8
   - `comparison/model_comparison_pr.png`: Multi-model Precision-Recall curves with Average Precision (AP)
   - `comparison/model_comparison_metrics_barchart.png`: Grouped bar chart across 7 academic metrics
   - `comparison/model_comparison_radar.png`: Multi-dimensional radar/spider trade-off profiles
-  - `comparison/model_comparison_confusion_matrices.png`: 2x2 grid of confusion matrices
+  - `comparison/model_comparison_confusion_matrices.png`: Multi-panel grid of confusion matrices across all evaluated models
   - `comparison/model_comparison_calibration.png`: Probability calibration (Reliability diagram)
   - `comparison/arima_vs_arimax_forecasting.png`: Volume forecasting accuracy comparison (MAE, RMSE, sMAPE)
 - **Predictions & Checkpoints**:
   - Ranked Trending Topics: `data/08_predictions/predicted_trending_topics.csv` (Enriched with `time_to_trend_hours`, `time_to_trend_urgency`, `projected_trend_onset`, and `cascade_stage`)
   - Full Test Set Predictions with Lifespan & 24h Outlook: `data/08_predictions/all_test_predictions.parquet`
-  - Time-to-Trend Countdown Metrics: `data/08_predictions/time_to_trend_metrics.json` (MAE: 3.28h, RMSE: 4.01h, $\pm 6\text{h}$ Acc: 86.96%)
+  - Time-to-Trend Countdown Metrics: `data/08_predictions/time_to_trend_metrics.json` (MAE: 2.99h, RMSE: 3.34h, $\pm 6\text{h}$ Acc: 96.15%)
   - Comprehensive Classification Metrics JSON: `data/08_predictions/evaluation_metrics.json`
-  - Trained Model Checkpoints: `models/arima/`, `models/arimax/`, `models/lightgbm/`, `models/xgboost/`, `models/time_to_trend/` (`time_to_trend_regressor.joblib`), and `models/xlm_roberta/` (`v1`, `v2`,...)
+  - Trained Model Checkpoints: `models/champion_model.joblib`, `models/champion_metadata.json`, `models/bertopic/model/`, `models/arima/`, `models/arimax/`, `models/lightgbm/`, `models/xgboost/`, `models/random_forest/`, `models/time_to_trend/` (`time_to_trend_regressor.joblib`), and `models/xlm_roberta/` (active: `embedding/v3`, `sentiment/v4`)
 
 ---
 
@@ -791,21 +791,23 @@ Each training run increments the version number without overwriting previous wei
 ```text
 models/xlm_roberta/
 ├── embedding/
-│   ├── latest_version.json           # Pointer file indicating latest active version
-│   ├── v1/                           # First fine-tuned version
-│   │   ├── config.json
-│   │   ├── model.safetensors         # Model weights
-│   │   ├── tokenizer.json
-│   │   └── version_info.json         # Performance metrics (Acc, Macro F1, Loss, Epochs)
-│   └── v2/                           # Subsequent fine-tuned version (never overwrites v1)
+│   ├── latest_version.json           # Pointer file indicating latest active version (points to v3)
+│   └── v3/                           # Active production checkpoint (fine-tuned SimCSE)
+│       ├── config.json
+│       ├── model.safetensors         # Model weights (1.11 GB)
+│       ├── tokenizer.json
+│       └── version_info.json         # Performance metrics (Loss, Epochs, Date)
 └── sentiment/
-    ├── latest_version.json
-    ├── v1/
-    └── v2/
+    ├── latest_version.json           # Pointer file indicating latest active version (points to v4)
+    └── v4/                           # Active production checkpoint (3-class classifier)
+        ├── config.json
+        ├── model.safetensors         # Model weights (1.11 GB)
+        ├── tokenizer.json
+        └── version_info.json         # Performance metrics (Acc, Macro F1, Loss, Epochs)
 ```
 
-- **Seamless Loading**: In [`configs/config.yaml`](configs/config.yaml), `embedding_model_name` points to `"models/xlm_roberta/embedding"` and `sentiment_model_name` points to `"models/xlm_roberta/sentiment"`. Stage 3 automatically detects and loads the newest version (`v2` over `v1`).
-- **Rollback**: To rollback to an earlier checkpoint, simply specify the exact subfolder in `configs/config.yaml` (e.g. `sentiment_model_name: "models/xlm_roberta/sentiment/v1"`).
+- **Seamless Loading**: In [`configs/config.yaml`](configs/config.yaml), `embedding_model_name` points to `"models/xlm_roberta/embedding"` and `sentiment_model_name` points to `"models/xlm_roberta/sentiment"`. Stage 3 automatically detects and loads the newest active version resolved by `latest_version.json` (currently `embedding/v3` and `sentiment/v4`).
+- **Rollback / Explicit Pinning**: To pin a specific version, simply specify the exact subfolder in `configs/config.yaml` (e.g. `sentiment_model_name: "models/xlm_roberta/sentiment/v4"`). Intermediate checkpoints from earlier training runs can be safely archived to free storage space.
 
 ---
 
