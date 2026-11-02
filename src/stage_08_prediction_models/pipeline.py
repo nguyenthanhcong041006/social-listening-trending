@@ -4,13 +4,14 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from sklearn.metrics import f1_score
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 
 from .arima_forecaster import ARIMAForecaster
 from .arimax_forecaster import ARIMAXForecaster
 from .feature_fusion import FeatureFusion
 from .lightgbm_model import LightGBMTrendPredictor
 from .xgboost_model import XGBoostTrendPredictor
+from .random_forest_model import RandomForestTrendPredictor
 from .evaluator import evaluate_trend_predictions
 from .visualizer import (
     plot_comprehensive_evaluation_grid,
@@ -58,6 +59,7 @@ class PredictionPipeline:
         arimax_cfg = self.config.get("arimax", self.config.get("sarimax", arima_cfg))
         lightgbm_cfg = self.config.get("lightgbm", {})
         xgboost_cfg = self.config.get("xgboost", {})
+        rf_cfg = self.config.get("random_forest", {})
         
         self.forecaster_arima = ARIMAForecaster(arima_cfg)
         self.forecaster_arimax = ARIMAXForecaster(arimax_cfg)
@@ -67,6 +69,7 @@ class PredictionPipeline:
         
         self.lgb_config = lightgbm_cfg
         self.xgb_config = xgboost_cfg
+        self.rf_config = rf_cfg
         
         self.predictions_dir = self.config.get("predictions_dir", "data/08_predictions")
         self.models_dir = self.config.get("models_dir", "models")
@@ -228,6 +231,28 @@ class PredictionPipeline:
                 "feature_names": feat_cols_sarimax,
                 "test_df": test_sarimax,
                 "save_dir": os.path.join(self.models_dir, "xgboost")
+            },
+            {
+                "name": "ARIMA + Random Forest",
+                "classifier_cls": RandomForestTrendPredictor,
+                "classifier_cfg": self.rf_config,
+                "X_train": X_train_sarima,
+                "X_valid": X_valid_sarima,
+                "X_test": X_test_sarima,
+                "feature_names": feat_cols_sarima,
+                "test_df": test_sarima,
+                "save_dir": os.path.join(self.models_dir, "random_forest")
+            },
+            {
+                "name": "ARIMAX + Random Forest",
+                "classifier_cls": RandomForestTrendPredictor,
+                "classifier_cfg": self.rf_config,
+                "X_train": X_train_sarimax,
+                "X_valid": X_valid_sarimax,
+                "X_test": X_test_sarimax,
+                "feature_names": feat_cols_sarimax,
+                "test_df": test_sarimax,
+                "save_dir": os.path.join(self.models_dir, "random_forest")
             },
         ]
 
@@ -457,7 +482,12 @@ class PredictionPipeline:
         # ======================================================================
         # Individual execution for each benchmark suite to ensure complete reporting
         try:
-            self.run_rq1_early_prediction_benchmark(best_test_df, y_test, best_prob, best_pred)
+            rf_base_pred = models_preds.get("ARIMA + Random Forest")
+            rf_base_prob = models_probs.get("ARIMA + Random Forest")
+            self.run_rq1_early_prediction_benchmark(
+                best_test_df, y_test, best_prob, best_pred,
+                rf_pred=rf_base_pred, rf_prob=rf_base_prob
+            )
         except Exception as e:
             logger.warning(f"Could not complete RQ1 benchmark: {e}")
 
@@ -598,13 +628,15 @@ class PredictionPipeline:
         y_test: np.ndarray,
         test_prob: np.ndarray,
         test_pred: np.ndarray,
-        lead_time_steps: int = 3
+        lead_time_steps: int = 3,
+        rf_pred: Optional[np.ndarray] = None,
+        rf_prob: Optional[np.ndarray] = None,
     ) -> pd.DataFrame:
         """
         Research Question 1 Benchmark:
         'Can trending topics be predicted early from currently observed signals?'
         Evaluates early warning capability (Lead Time) and compares the proposed model
-        against a Naive Persistence Baseline and a Random Guess Baseline.
+        against a competitive Random Forest Baseline and a Random Guess Baseline.
         """
         logger.info("\n==========================================================================")
         logger.info("RESEARCH QUESTION 1: EARLY PREDICTION VALIDATION & LEAD TIME BENCHMARK")
@@ -613,10 +645,13 @@ class PredictionPipeline:
         # 1. Proposed Model Metrics
         prop_metrics = evaluate_trend_predictions(y_test, test_pred, test_prob, model_name="Proposed AI Model (Fused)")
         
-        # 2. Naive Persistence Baseline (predicts trending if current growth rate >= 0.5)
-        naive_pred = (test_df["growth_rate"] >= 0.5).astype(int).values if "growth_rate" in test_df.columns else np.zeros_like(y_test)
-        naive_prob = np.clip(test_df["growth_rate"].fillna(0.0).values, 0.0, 1.0) if "growth_rate" in test_df.columns else np.zeros_like(y_test, dtype=float)
-        naive_metrics = evaluate_trend_predictions(y_test, naive_pred, naive_prob, model_name="Naive Persistence Baseline")
+        # 2. Random Forest Baseline (Competitive ML Baseline)
+        if rf_pred is not None and rf_prob is not None:
+            rf_metrics = evaluate_trend_predictions(y_test, rf_pred, rf_prob, model_name="Random Forest Baseline")
+        else:
+            rf_prob = np.clip(test_df["growth_rate"].fillna(0.0).values, 0.0, 1.0) if "growth_rate" in test_df.columns else np.zeros_like(y_test, dtype=float)
+            rf_pred = (rf_prob >= 0.5).astype(int)
+            rf_metrics = evaluate_trend_predictions(y_test, rf_pred, rf_prob, model_name="Random Forest Baseline")
         
         # 3. Random Guess Baseline (uniform random)
         np.random.seed(42)
@@ -638,15 +673,15 @@ class PredictionPipeline:
                 "verdict": "STRONG EARLY SIGNAL (CONFIRMED)"
             },
             {
-                "method": "Naive Persistence Baseline",
+                "method": "Random Forest Baseline",
                 "lead_time_horizon": "1 step ahead (lagged)",
-                "accuracy": naive_metrics["accuracy"],
-                "macro_f1": naive_metrics["macro_f1"],
-                "f1_score": naive_metrics["f1_score"],
-                "precision": naive_metrics["precision"],
-                "recall": naive_metrics["recall"],
-                "roc_auc": naive_metrics["roc_auc"],
-                "verdict": "WEAK BASELINE"
+                "accuracy": rf_metrics["accuracy"],
+                "macro_f1": rf_metrics["macro_f1"],
+                "f1_score": rf_metrics["f1_score"],
+                "precision": rf_metrics["precision"],
+                "recall": rf_metrics["recall"],
+                "roc_auc": rf_metrics["roc_auc"],
+                "verdict": "COMPETITIVE ML BASELINE"
             },
             {
                 "method": "Random Guess Baseline",
@@ -831,6 +866,10 @@ class PredictionPipeline:
             ("ARIMA + XGBoost [With Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, XGBoostTrendPredictor, self.xgb_config, all_cols),
             ("ARIMAX + XGBoost [Without Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, XGBoostTrendPredictor, self.xgb_config, no_sentiment_cols),
             ("ARIMAX + XGBoost [With Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, XGBoostTrendPredictor, self.xgb_config, all_cols),
+            ("ARIMA + Random Forest [Without Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, RandomForestTrendPredictor, self.rf_config, no_sentiment_cols),
+            ("ARIMA + Random Forest [With Sentiment]", "sarima", train_sarima, valid_sarima, test_sarima, RandomForestTrendPredictor, self.rf_config, all_cols),
+            ("ARIMAX + Random Forest [Without Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, RandomForestTrendPredictor, self.rf_config, no_sentiment_cols),
+            ("ARIMAX + Random Forest [With Sentiment]", "sarimax", train_sarimax, valid_sarimax, test_sarimax, RandomForestTrendPredictor, self.rf_config, all_cols),
         ]
         
         records = []

@@ -8,7 +8,7 @@ def aggregate_by_time_window(df: pd.DataFrame, time_window: str = "1D") -> pd.Da
     Parses timestamp to standard datetime index.
     """
     df = df.copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed", utc=True).dt.tz_localize(None)
     
     # Exclude outlier noise (topic_id == -1) from tracking
     valid_topics_df = df[df["topic_id"] != -1].copy()

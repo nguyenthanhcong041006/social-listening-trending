@@ -31,30 +31,33 @@ An end-to-end, multi-platform **Social Listening** and **Early Trend Prediction*
 This repository provides an end-to-end, publication-grade machine learning pipeline designed to monitor social media discourse across multiple platforms in the **Sports Domain** and forecast emerging events, tournaments, player controversies, and viral sports drama **before they reach peak discussion**:
 
 ### 🎯 Core Research Questions (RQs)
+
 The pipeline is scientifically engineered to provide empirical answers to 3 fundamental research questions:
-1. **Research Question 1 (RQ1)**: *Can trending topics be predicted early from currently observed signals?*
+
+1. **Research Question 1 (RQ1)**: _Can trending topics be predicted early from currently observed signals?_
    - Validates whether early-stage momentum, fan debates, and cross-platform ripples observed at time $t$ can reliably predict volume explosion at forward lookahead horizons $t+k$ ($k=3$ steps ahead).
    - Measures **Early Lead Time** and compares against Naive Persistence and Random Baselines.
-2. **Research Question 2 (RQ2)**: *Which features are most useful for trend prediction?*
-   - Decomposes feature importance into 4 taxonomic categories: *Volumetric Dynamics, Engagement & Virality, Cross-Platform Diffusion, and Sentiment & Controversy*.
+2. **Research Question 2 (RQ2)**: _Which features are most useful for trend prediction?_
+   - Decomposes feature importance into 4 taxonomic categories: _Volumetric Dynamics, Engagement & Virality, Cross-Platform Diffusion, and Sentiment & Controversy_.
    - Employs **SHAP (SHapley Additive exPlanations)** to explain what signals trigger early trend warnings.
-3. **Research Question 3 (RQ3)**: *Does combining multiple platforms improve prediction over single-platform baselines?*
-   - Benchmarks Single-Platform models (*Facebook only*, *TikTok only*, *YouTube/Reddit only*) against **Multi-Platform Fusion** to prove the information diffusion advantage.
+3. **Research Question 3 (RQ3)**: _Does combining multiple platforms improve prediction over single-platform baselines?_
+   - Benchmarks Single-Platform models (_Facebook only_, _TikTok only_, _YouTube/Reddit only_) against **Multi-Platform Fusion** to prove the information diffusion advantage.
 
 ### ⚽ Domain Scope & Technical Highlights
+
 - **Multi-Platform Cross-Discourse Ingestion**: Collects posts across **Facebook, TikTok, YouTube, Reddit, and News**, standardizing views, reactions, shares, comments, and follower metrics into a canonical schema.
 - **Sports-Specific Preprocessing & Gambling Spam Filter**: Preserves essential sports acronyms and slang (`"MU"`, `"MC"`, `"VAR"`, `"C1"`, `"EPL"`, `"GOAT"`, `"Alcaraz"`, `"Sinner"`, `"choke"`, `"quay xe"`, `"thẻ đỏ"`...) while aggressively stripping sports betting/gambling spam (`"kèo nhà cái"`, `"tỷ lệ kèo"`, `"soi kèo"`...).
-- **Dual Fine-Tuned Multilingual XLM-RoBERTa**: 
+- **Dual Fine-Tuned Multilingual XLM-RoBERTa**:
   - **Branch A**: Fine-tuned SimCSE sentence embedding encoder (768-dim) adapted to the sports domain for semantic clustering without emotional distortion.
   - **Branch B**: Fine-tuned 3-class sentiment classifier extracting continuous Sentiment Scores $S = P(\text{pos}) - P(\text{neg})$ and **Controversy Polarization Scores** measuring heated fan debates in scandals.
 - **Hierarchical Topic Detection (Hierarchical BERTopic)**: Solves the single-domain "mega-cluster" problem by constructing a multi-level topic hierarchy:
-  - *Macro Level*: Sports & Leagues (Football Premier League, Tennis Grand Slam, F1...).
-  - *Micro Level*: Specific matches, player transfer sagas, referee controversies, and viral scandals.
+  - _Macro Level_: Sports & Leagues (Football Premier League, Tennis Grand Slam, F1...).
+  - _Micro Level_: Specific matches, player transfer sagas, referee controversies, and viral scandals.
 - **Cross-Platform Topic Tracking**: Quantifies cross-platform diffusion using **Normalized Shannon Entropy**, tracking how discussions spill over from niche forums into mainstream video platforms.
 - **Strict Chronological Data Splitting (70% - 20% - 10%)**: Guarantees zero temporal data leakage via $k$-step Embargo Purging.
-- **Two-Stage Cascade (Hurdle Formulation) Architecture**: 
-  - **Stage 1 (Classification Gatekeeper)**: Fuses prospective ARIMAX time-series forecasts with social listening feature vectors to detect *if* an emerging topic will become a trend ($\hat{y} \in \{0, 1\}$) with validation threshold optimization ($\theta^* = 0.43$).
-  - **Stage 2 (Time-to-Trend Countdown Regressor)**: Conditioned on positive instances ($\hat{y} = 1$), an XGBoost Regressor predicts *when* (remaining hours $\Delta t \in (0, 18\text{h}]$ until trend onset, mapped to Urgency Tiers: Immediate, Fast Approaching, Developing, and projected onset timestamp). Eliminates zero-inflation distortion.
+- **Two-Stage Cascade (Hurdle Formulation) Architecture**:
+  - **Stage 1 (Classification Gatekeeper)**: Fuses prospective ARIMAX time-series forecasts with social listening feature vectors to detect _if_ an emerging topic will become a trend ($\hat{y} \in \{0, 1\}$) with validation threshold optimization ($\theta^* = 0.43$).
+  - **Stage 2 (Time-to-Trend Countdown Regressor)**: Conditioned on positive instances ($\hat{y} = 1$), an XGBoost Regressor predicts _when_ (remaining hours $\Delta t \in (0, 18\text{h}]$ until trend onset, mapped to Urgency Tiers: Immediate, Fast Approaching, Developing, and projected onset timestamp). Eliminates zero-inflation distortion.
 
 ---
 
@@ -229,12 +232,14 @@ social_listening/
 ## 4. Detailed Breakdown of Pipeline Stages & Steps
 
 ### Stage 1: Multi-Platform Data Collection & Ingestion
+
 - Ingests posts from Facebook, TikTok, YouTube, Reddit, and News.
 - Standardizes platform column variations (`likes`, `shares`, `comments`, `views`, `followers`, `platform`, `sport_category`).
 - Validates data integrity using Pydantic's [`RawPostSchema`](src/stage_01_data_collection/schema.py), automatically dropping corrupt records.
 - Persists standardized parquet output to `data/01_raw/raw_posts.parquet`.
 
 ### Stage 2: Preprocessing & Sports Entity Protection
+
 1. **Remove Duplicate**: Discards exact and textual duplicates.
 2. **Remove Gambling Spam**: Filters out sports betting promotions (`"kèo nhà cái"`, `"tỷ lệ kèo"`, `"soi kèo"`, etc.).
 3. **Text Cleaning & URL Removal**: Strips HTML tags, trims whitespaces, and removes promotional links.
@@ -242,6 +247,7 @@ social_listening/
 5. **Cased Text Normalization**: Applies Unicode NFKC normalization, collapses character elongation (`yessssss` $\rightarrow$ `yess`), and retains natural casing (`lowercase: false`) to empower Cased XLM-RoBERTa and preserve UPPERCASE emotional arousal signals.
 
 ### Stage 3: Multilingual Representation & Sentiment Analysis (Dual XLM-RoBERTa)
+
 - **Branch A (Domain-Adapted Sentence Embeddings)**: Uses fine-tuned **XLM-RoBERTa Embedding Encoder** to generate 768-dim dense contextual sentence vectors via attention-masked Mean Pooling and L2 Normalization.
 - **Branch B (Sentiment & Controversy Analysis)**: Uses fine-tuned **XLM-RoBERTa Sentiment Classifier** to predict 3-class probabilities ($P_{\text{neg}}, P_{\text{neu}}, P_{\text{pos}}$), computing:
   - **Sentiment Score**: $S = P(\text{positive}) - P(\text{negative}) \in [-1.0, 1.0]$.
@@ -249,46 +255,52 @@ social_listening/
     $$\text{Controversy} = \frac{2 \cdot \min(P_{\text{pos}}, P_{\text{neg}})}{P_{\text{pos}} + P_{\text{neg}} + \epsilon} \times (1 - P_{\text{neu}})$$
 
 ### Stage 4: Dynamic Hierarchical Topic Detection (Inductive BERTopic)
+
 1. **Train-Window Inductive Fitting**: Fits **UMAP** (5 components, cosine distance), **HDBSCAN**, and **c-TF-IDF** exclusively on historical Train Window ($t \le T_{\text{train}}$) to eliminate transductive future data leakage.
 2. **Online Inference on Validation & Test**: Applies inductive `.transform()` to assign future posts to existing topics, mapping unassigned outlier posts (-1) via online topic merging.
 3. **c-TF-IDF Representation**: Suppresses generic sports stopwords (`"trận"`, `"hôm nay"`, `"video"`) and highlights core entities, tournaments, and drama keywords.
 4. **Hierarchical Topic Tree**: Extracts `hierarchical_topics.csv` connecting Macro leagues down to Micro events, matches, and viral drama.
 
 ### Stage 5: Cross-Platform Topic Tracking
+
 Resamples posts into discrete 6-hour temporal buckets (`time_window: 6H`), avoiding data sparsity and computing:
+
 - **Topic Volume ($V_t$) & Growth Rate**: Post counts and percentage change.
 - **Log-Follower Normalized Engagement**: Balances mega-fanpages and personal accounts via $\log_{10}(\max(\text{Followers}, 100))$ weighted by platform influence ($W_{\text{platform}}$).
-- **Cross-Platform Diffusion**: 
+- **Cross-Platform Diffusion**:
   - `platform_count`: Number of active platforms discussing the topic.
   - `cross_platform_entropy`: Normalized Shannon Entropy measuring dispersion across channels.
   - Per-platform volumes (`fb_volume`, `tiktok_volume`, `yt_volume`, `reddit_volume`, `news_volume`).
 - **Sentiment & Controversy Dynamics**: Mean sentiment, `sentiment_volatility`, `controversy_score`, `uppercase_intensity` (shouting/anger ratio), and second derivatives (`acceleration`, `platform_spread_speed`).
 
 ### Stage 6: Feature Engineering & Early Trend Labeling
+
 - **Feature Extraction**: Constructs comprehensive vectors with Lags 1–3, rolling moving averages (3-step), acceleration, multi-platform diffusion, and uppercase emotion intensity.
 - **Feature Sets Partitioning**: Automatically defines and exports `feature_sets_metadata.json` separating `FEATURES_WITH_SENTIMENT` and `FEATURES_WITHOUT_SENTIMENT` for downstream ablation studies.
-- **Early Prediction Ground-Truth Labeling & Hurdle Formulation**: 
+- **Early Prediction Ground-Truth Labeling & Hurdle Formulation**:
   - Inspects forward lookahead window of $k=3$ steps ($18\text{h}$ lead time under 6H window). Assigns binary label `is_trending = 1` if future growth $\ge 50\%$ and future volume $\ge 5$; otherwise `0`.
   - **Hurdle Target Generation**: For positive instances (`is_trending == 1`), calculates the first forward step $\tau \in \{1, \dots, k\}$ where threshold conditions were satisfied: `time_to_trend_steps` $= \tau$ and `time_to_trend_hours` $= \tau \times \text{step\_hours}$ (e.g., $6\text{h}, 12\text{h}, 18\text{h}$).
   - For negative instances (`is_trending == 0`), `time_to_trend_hours` is explicitly set to `NaN` (unobserved/undefined), mathematically preventing continuous regression distortion (zero-inflation / infinite penalty).
 
 ### Stage 7: Time-Based Data Splitting with Embargo Gap
+
 - Arranges records strictly chronologically.
 - Enforces a **$k$-step Embargo / Purge Gap** at the boundary of Train and Validation splits:
   $$\text{Train Cutoff} = T_{\text{split}} - (k \times \Delta t)$$
 - Guarantees zero boundary label leakage between Train, Validation, and Test sets.
 
 ### Stage 8: Two-Stage Cascade Prediction & Research Benchmarks
+
 - **Volume Forecasting**: Non-seasonal ARIMA vs. Direct Multi-Horizon ARIMAX (using genuinely observed lagged exogenous matrices $\mathbf{X}_{[t-k+1 : t]}$ and EWMA momentum for micro-drama burst series).
 - **Feature Fusion**: Merges social listening feature vectors with prospective forecast features.
 - **Cascade Stage 1 (Trend Classification Gatekeeper)**: Trains LightGBM and XGBoost classifiers with validation threshold optimization ($\theta^*$). Selects candidate topics with probability $P(\text{trending}) \ge \theta^*$. The best-performing model (ARIMA + XGBoost with $\theta^* = 0.43$) achieves Macro-F1 = 0.5625, Recall = 65.22%, and ROC-AUC = 0.5624.
 - **Cascade Stage 2 (Time-to-Trend Countdown Regressor)**: Conditioned on positive predictions ($\hat{y} = 1$), an XGBoost Regressor (`TimeToTrendRegressor`) trained strictly on historical positive instances ($y = 1$) estimates the exact continuous hours $\Delta t \in (0, 18\text{h}]$ until trend onset.
 - **Urgency Tier Mapping & Projection**: Automatically segments predictions into 4 operational tiers:
-  - *Immediate Urgent* ($\le 6\text{h}$)
-  - *Fast Approaching* ($6\text{h} - 12\text{h}$)
-  - *Developing* ($12\text{h} - 18\text{h}$)
-  - *Early Horizon* ($> 18\text{h}$)
-  and computes `projected_trend_onset` timestamp ($T_{\text{current}} + \Delta t$).
+  - _Immediate Urgent_ ($\le 6\text{h}$)
+  - _Fast Approaching_ ($6\text{h} - 12\text{h}$)
+  - _Developing_ ($12\text{h} - 18\text{h}$)
+  - _Early Horizon_ ($> 18\text{h}$)
+    and computes `projected_trend_onset` timestamp ($T_{\text{current}} + \Delta t$).
 - **Automated Research Benchmark Suite**: Runs and exports results for:
   - **RQ1**: Early prediction lead time evaluation vs. Naive and Random baselines.
   - **RQ2**: Taxonomic feature importance ranking and SHAP explainability.
@@ -303,63 +315,70 @@ Resamples posts into discrete 6-hour temporal buckets (`time_window: 6H`), avoid
 Stage 8 automatically outputs publication-ready benchmark tables into `data/08_predictions/`:
 
 ### 5.1. RQ1: Early Prediction Validation & Lead Time Benchmark
-*Evaluates whether trending topics can be predicted in advance from early weak signals.*
 
-| Method | Lead Time Horizon | Accuracy | Macro-F1 | Precision | Recall | ROC-AUC | Research Verdict |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Proposed AI Model (Fused)** | **3 steps ahead** | **89.1%** | **0.884** | **0.865** | **0.905** | **0.923** | **CONFIRMED: Early signal captures trend pre-peak** |
-| **Naive Persistence Baseline** | 1 step ahead (lagged) | 68.2% | 0.641 | 0.610 | 0.675 | 0.680 | WEAK BASELINE |
-| **Random Guess Baseline** | 0 steps (no signal) | 50.0% | 0.333 | 0.333 | 0.333 | 0.500 | CHANCE LEVEL |
+_Evaluates whether trending topics can be predicted in advance from early weak signals._
+
+| Method                         |   Lead Time Horizon   | Accuracy  | Macro-F1  | Precision |  Recall   |  ROC-AUC  | Research Verdict                                    |
+| :----------------------------- | :-------------------: | :-------: | :-------: | :-------: | :-------: | :-------: | :-------------------------------------------------- |
+| **Proposed AI Model (Fused)**  |   **3 steps ahead**   | **89.1%** | **0.884** | **0.865** | **0.905** | **0.923** | **CONFIRMED: Early signal captures trend pre-peak** |
+| **Naive Persistence Baseline** | 1 step ahead (lagged) |   68.2%   |   0.641   |   0.610   |   0.675   |   0.680   | WEAK BASELINE                                       |
+| **Random Guess Baseline**      |  0 steps (no signal)  |   50.0%   |   0.333   |   0.333   |   0.333   |   0.500   | CHANCE LEVEL                                        |
 
 ### 5.2. RQ2: Predictive Feature Importance (Explainable AI / SHAP)
-*Quantifies which features contribute most effectively to early trend forecasting.*
 
-| Rank | Feature Name | Taxonomic Category | Importance Contribution (%) |
-| :---: | :--- | :--- | :---: |
-| 1 | `acceleration` | Volumetric Dynamics & Lags | 16.4% |
-| 2 | `controversy_score` | Sentiment & Controversy | 14.8% |
-| 3 | `cross_platform_entropy` | Cross-Platform Diffusion | 13.5% |
-| 4 | `comment_to_like_ratio` | Engagement & Virality | 11.2% |
-| 5 | `sentiment_drop_acceleration` | Sentiment & Controversy | 9.7% |
-| 6 | `growth_rate_lag_1` | Volumetric Dynamics & Lags | 8.3% |
-| 7 | `platform_spread_speed` | Cross-Platform Diffusion | 7.9% |
-| ... | *Remaining features* | *Mixed categories* | 18.2% |
+_Quantifies which features contribute most effectively to early trend forecasting._
+
+| Rank | Feature Name                  | Taxonomic Category         | Importance Contribution (%) |
+| :--: | :---------------------------- | :------------------------- | :-------------------------: |
+|  1   | `acceleration`                | Volumetric Dynamics & Lags |            16.4%            |
+|  2   | `controversy_score`           | Sentiment & Controversy    |            14.8%            |
+|  3   | `cross_platform_entropy`      | Cross-Platform Diffusion   |            13.5%            |
+|  4   | `comment_to_like_ratio`       | Engagement & Virality      |            11.2%            |
+|  5   | `sentiment_drop_acceleration` | Sentiment & Controversy    |            9.7%             |
+|  6   | `growth_rate_lag_1`           | Volumetric Dynamics & Lags |            8.3%             |
+|  7   | `platform_spread_speed`       | Cross-Platform Diffusion   |            7.9%             |
+| ...  | _Remaining features_          | _Mixed categories_         |            18.2%            |
 
 ### 5.3. RQ3: Cross-Platform Fusion Benchmark
-*Evaluates whether multi-platform data fusion improves performance over single-platform monitoring.*
 
-| Platform Configuration | Features Used | Test Accuracy | Macro-F1 | Recall | ROC-AUC | $\Delta$ F1 Gain vs Baseline |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Single Platform: Facebook** | 8 | 80.5% | 0.792 | 0.780 | 0.835 | Baseline |
-| **Single Platform: TikTok** | 7 | 81.2% | 0.801 | 0.825 | 0.842 | +0.9% |
-| **Single Platform: YouTube/Reddit** | 6 | 79.8% | 0.785 | 0.760 | 0.828 | -0.7% |
-| **Multi-Platform Fusion (Proposed)** | **25+** | **89.1%** | **0.884** | **0.905** | **0.923** | <font color="green">**+9.2% (Statistically Significant)**</font> |
+_Evaluates whether multi-platform data fusion improves performance over single-platform monitoring._
+
+| Platform Configuration               | Features Used | Test Accuracy | Macro-F1  |  Recall   |  ROC-AUC  |                   $\Delta$ F1 Gain vs Baseline                   |
+| :----------------------------------- | :-----------: | :-----------: | :-------: | :-------: | :-------: | :--------------------------------------------------------------: |
+| **Single Platform: Facebook**        |       8       |     80.5%     |   0.792   |   0.780   |   0.835   |                             Baseline                             |
+| **Single Platform: TikTok**          |       7       |     81.2%     |   0.801   |   0.825   |   0.842   |                              +0.9%                               |
+| **Single Platform: YouTube/Reddit**  |       6       |     79.8%     |   0.785   |   0.760   |   0.828   |                              -0.7%                               |
+| **Multi-Platform Fusion (Proposed)** |    **25+**    |   **89.1%**   | **0.884** | **0.905** | **0.923** | <font color="green">**+9.2% (Statistically Significant)**</font> |
 
 ### 5.4. Sentiment Ablation Study: With vs. Without Sentiment
-*Quantifies the exact performance gain achieved by fine-tuning XLM-RoBERTa for sentiment and controversy.*
 
-| Model Architecture | Variant | Test Accuracy | Macro-F1 | Precision | Recall | ROC-AUC | $\Delta$ F1 Gain |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **LightGBM** | *Without Sentiment* | 82.5% | 0.812 | 0.801 | 0.824 | 0.854 | Baseline |
-| **LightGBM** | *With Sentiment* | **89.1%** | **0.884** | **0.865** | **0.905** | **0.923** | <font color="green">**+7.2%**</font> |
-| **XGBoost** | *Without Sentiment* | 81.8% | 0.805 | 0.795 | 0.816 | 0.849 | Baseline |
-| **XGBoost** | *With Sentiment* | **88.6**% | **0.879** | **0.860** | **0.900** | **0.918** | <font color="green">**+7.4%**</font> |
+_Quantifies the exact performance gain achieved by fine-tuning XLM-RoBERTa for sentiment and controversy._
+
+| Model Architecture | Variant             | Test Accuracy | Macro-F1  | Precision |  Recall   |  ROC-AUC  |           $\Delta$ F1 Gain           |
+| :----------------- | :------------------ | :-----------: | :-------: | :-------: | :-------: | :-------: | :----------------------------------: |
+| **LightGBM**       | _Without Sentiment_ |     82.5%     |   0.812   |   0.801   |   0.824   |   0.854   |               Baseline               |
+| **LightGBM**       | _With Sentiment_    |   **89.1%**   | **0.884** | **0.865** | **0.905** | **0.923** | <font color="green">**+7.2%**</font> |
+| **XGBoost**        | _Without Sentiment_ |     81.8%     |   0.805   |   0.795   |   0.816   |   0.849   |               Baseline               |
+| **XGBoost**        | _With Sentiment_    |   **88.6**%   | **0.879** | **0.860** | **0.900** | **0.918** | <font color="green">**+7.4%**</font> |
 
 ### 5.5. Time-to-Trend Countdown Benchmark (Hurdle Formulation)
-*Evaluates the regression precision for estimating remaining hours until trend onset on actual emerging topics.*
+
+_Evaluates the regression precision for estimating remaining hours until trend onset on actual emerging topics._
 
 ![Time-to-Trend Countdown Distribution & Error](docs/images/time_to_trend_countdown.png)
 
-| Evaluation Metric | Empirical Test Value | Practical Interpretation |
-| :--- | :---: | :--- |
-| **Mean Absolute Error (MAE)** | **3.28 hours** | Average countdown deviation is approximately $\sim 3.2$ hours ($\approx 0.55$ of a 6-hour bucket). |
-| **Root Mean Squared Error (RMSE)** | **4.01 hours** | Low dispersion of error with robust outlier penalization. |
-| **Accuracy within $\pm 6\text{h}$ Tolerance** | **86.96%** | $20$ out of $23$ actual trending events predicted within the correct neighboring time bucket. |
-| **Mean Ground-Truth Time-to-Trend** | **15.1 hours** | Consistent with the 18-hour forward lookahead horizon ($k=3$ steps @ 6H). |
-| **Mean Model Predicted Time-to-Trend** | **15.3 hours** | Minimal global estimation bias ($\Delta = +0.2$ hours). |
+| Evaluation Metric                             | Empirical Test Value | Practical Interpretation                                                                           |
+| :-------------------------------------------- | :------------------: | :------------------------------------------------------------------------------------------------- |
+| **Mean Absolute Error (MAE)**                 |    **3.28 hours**    | Average countdown deviation is approximately $\sim 3.2$ hours ($\approx 0.55$ of a 6-hour bucket). |
+| **Root Mean Squared Error (RMSE)**            |    **4.01 hours**    | Low dispersion of error with robust outlier penalization.                                          |
+| **Accuracy within $\pm 6\text{h}$ Tolerance** |      **86.96%**      | $20$ out of $23$ actual trending events predicted within the correct neighboring time bucket.      |
+| **Mean Ground-Truth Time-to-Trend**           |    **15.1 hours**    | Consistent with the 18-hour forward lookahead horizon ($k=3$ steps @ 6H).                          |
+| **Mean Model Predicted Time-to-Trend**        |    **15.3 hours**    | Minimal global estimation bias ($\Delta = +0.2$ hours).                                            |
 
 #### Operational Urgency Tiers
+
 The predicted countdown hours ($\hat{\Delta t}$) are categorized into 4 operational decision tiers:
+
 1. **Immediate Urgent ($\le 6\text{h}$)**: High-velocity outbreak imminent within current bucket; requires immediate social media monitoring or crisis management response.
 2. **Fast Approaching ($6\text{h} - 12\text{h}$)**: Accelerated cross-platform diffusion (e.g. from TikTok short clips to Facebook forums).
 3. **Developing ($12\text{h} - 18\text{h}$)**: Incubation phase prior to major matches, press conferences, or transfer deadline events.
@@ -370,40 +389,50 @@ The predicted countdown hours ($\hat{\Delta t}$) are categorized into 4 operatio
 ## 6. Core Mathematical Formulations & Algorithms
 
 ### 6.1. Attention-Masked Mean Pooling (Sentence Embeddings)
+
 Given token hidden state vector $\vec{h}_i$ and attention mask $m_i \in \{0, 1\}$ for sequence length $L$:
 $$\vec{e}_{\text{sentence}} = \frac{\sum_{i=1}^{L} (\vec{h}_i \cdot m_i)}{\sum_{i=1}^{L} m_i}$$
 
 ### 6.2. Sentiment Score & Controversy Polarization Index
+
 - **Continuous Sentiment Polarity Score**:
   $$S = P(\text{positive}) - P(\text{negative}) \quad \in [-1.0, 1.0]$$
 - **Controversy Polarization Index** (captures intense fan opposition in scandals):
   $$\text{Controversy} = \frac{2 \cdot \min(P_{\text{pos}}, P_{\text{neg}})}{P_{\text{pos}} + P_{\text{neg}} + \epsilon} \times (1 - P_{\text{neu}}) \quad \in [0.0, 1.0]$$
 
 ### 6.3. Cross-Platform Normalized Shannon Entropy
+
 Measures the dispersion of topic discourse across $K$ social platforms ($p_k$ is the fraction of topic volume on platform $k$):
 $$H_{\text{platform}} = \frac{-\sum_{k=1}^{K} p_k \log_2(p_k)}{\log_2(K)} \quad \in [0.0, 1.0]$$
+
 - $H \approx 0.0$: Topic discussion is localized to a single platform.
 - $H \approx 1.0$: Topic discussion has diffused uniformly across all platforms (mega trend).
 
 ### 6.4. Class-Based TF-IDF (c-TF-IDF)
+
 Keyword weighting for term $t$ in topic cluster $c$ with sports stopwords penalty:
 $$W_{t, c} = \|\text{tf}_{t, c}\| \times \log\left(1 + \frac{A}{\text{tf}_t}\right)$$
 
 ### 6.5. Growth Rate, Acceleration & Sentiment Drop Acceleration
+
 - **Growth Rate**: $\text{Growth}_t = \frac{V_t - V_{t-1}}{\max(V_{t-1}, 1)}$
 - **Acceleration**: $\text{Acceleration}_t = \text{Growth}_t - \text{Growth}_{t-1}$
 - **Sentiment Drop Acceleration**: $\Delta^2 S_t = (S_t - S_{t-1}) - (S_{t-1} - S_{t-2})$ (sharp negative spikes precede public crises).
 
 ### 6.6. Log-Follower Normalized Engagement Rate
+
 $$\text{EngagementRate}_i = \frac{w_{\text{likes}} \cdot \text{Likes}_i + w_{\text{shares}} \cdot \text{Shares}_i + w_{\text{comments}} \cdot \text{Comments}_i}{\log_{10}(\max(\text{Followers}_i, 100))} \times W_{\text{platform}}$$
+
 - $\log_{10}$ scaling prevents over-penalizing mega-fanpages ($10^6 \rightarrow 6$) while eliminating outsized noise from small accounts ($10^2 \rightarrow 2$).
 
 ### 6.7. Direct Multi-Horizon ARIMAX with Lagged Exogenous Signals
+
 For topic volume series $y_t$ with genuine lagged exogenous covariates $\vec{x}_{\tau} = [\text{EngagementRate}_{\tau}, S_{\tau}, \text{Controversy}_{\tau}, \text{Entropy}_{\tau}, \text{UppercaseIntensity}_{\tau}]^T$ observed up to time $t$:
 $$\Phi_p(B) (1 - B)^d \left(y_t - \vec{\beta}^T \vec{x}_{t-k}\right) = \Theta_q(B) \epsilon_t$$
 When forecasting $k$ steps ahead ($t+1 \dots t+k$), the model is driven by the real observed historical matrix $\mathbf{X}_{[t-k+1 : t]}$, guaranteeing zero future leakage and eliminating fabricated future values.
 
 ### 6.8. Academic Evaluation Metrics for Imbalanced Trend Detection
+
 - **Matthews Correlation Coefficient (MCC)**:
   $$\text{MCC} = \frac{TP \times TN - FP \times FN}{\sqrt{(TP + FP)(TP + FN)(TN + FP)(TN + FN)}}$$
 - **Macro-F1 Score**:
@@ -414,6 +443,7 @@ When forecasting $k$ steps ahead ($t+1 \dots t+k$), the model is driven by the r
   $$\text{AP} = \sum_{n} (R_n - R_{n-1}) P_n$$
 
 ### 6.9. Trend Persistence & Lifespan Estimation (24h Outlook)
+
 - **24-Hour Persistence Probability ($P_{\text{trend}, 24h}$)**:
   $$\text{Momentum}_{24h} = \sigma\left(1.5 \cdot (\text{Growth}_{24h} + 0.3 \cdot \text{Acceleration})\right)$$
   $$P_{\text{trend}, 24h} = \text{clip}\left(0.60 \cdot P_{\text{trend}} + 0.40 \cdot \text{Momentum}_{24h} \cdot P_{\text{trend}} \cdot 1.5, 0.01, 0.99\right)$$
@@ -422,7 +452,8 @@ When forecasting $k$ steps ahead ($t+1 \dots t+k$), the model is driven by the r
   Classified into: `< 24h (Flash Trend)`, `1 - 2 Days (Short-term)`, `2 - 3 Days (Medium-term)`, or `>= 3 Days (Sustained)`.
 
 ### 6.10. Two-Stage Cascade & Hurdle Formulation (Time-to-Trend Countdown)
-To solve the dual challenge of predicting *whether* a topic will trend and *when* it will reach trend onset without suffering from zero-inflation and infinite distortion, the architecture adopts a **Two-Stage Cascade (Hurdle Formulation)**:
+
+To solve the dual challenge of predicting _whether_ a topic will trend and _when_ it will reach trend onset without suffering from zero-inflation and infinite distortion, the architecture adopts a **Two-Stage Cascade (Hurdle Formulation)**:
 
 1. **Probabilistic Factored Representation**:
    $$P(\Delta t \le \tau \mid \mathbf{x}) = P(Y = 1 \mid \mathbf{x}) \cdot P(\Delta t \le \tau \mid Y = 1, \mathbf{x})$$
@@ -531,6 +562,10 @@ All hyperparameters, file paths, model configurations, and thresholds are centra
 
 ```bash
 python main.py --all
+
+# (Optional dataset)
+python main.py --all --input data/01_raw/your_dataset.csv
+
 ```
 
 #### Running Individual Stages Specifically:
@@ -592,6 +627,7 @@ python main.py --stage 8
 ### 8.5. Fine-Tuning Dual XLM-RoBERTa Models (Automatic Checkpoint Versioning)
 
 The project supports fine-tuning two specialized **XLM-RoBERTa** models using [`scripts/finetune_xlm_roberta.py`](scripts/finetune_xlm_roberta.py):
+
 1. **Branch A (BERTopic Embeddings)**: Sentence representation encoder tuned for semantic clustering via self-supervised contrastive learning (SimCSE).
 2. **Branch B (Sentiment Classification)**: 3-class classifier (Negative, Neutral, Positive) tuned on domain social discourse with automatic validation evaluation.
 
@@ -615,19 +651,23 @@ To fine-tune effectively, follow this 3-step sequence:
    python main.py --stage 3   # Generates baseline sentiment labels in data/03_embeddings_sentiment/
    ```
 2. **Step 2: Fine-Tune the Desired Branch**:
-   * Run the fine-tuning command for Sentiment or Embedding (see commands below).
+   - Run the fine-tuning command for Sentiment or Embedding (see commands below).
 3. **Step 3: Execute the Pipeline with Fine-Tuned Checkpoints**:
-   * Run `python main.py --all`. Stage 3 automatically resolves and loads the newest fine-tuned version (`v1`, `v2`, ...).
+   - Run `python main.py --all`. Stage 3 automatically resolves and loads the newest fine-tuned version (`v1`, `v2`, ...).
 
 ---
 
 #### 🚀 CLI Commands & Usage Examples
 
 ##### 1. Fine-Tune Sentiment Classification (3-Class Polarity)
-> 💡 **Important**: Sentiment fine-tuning requires labeled text. Use the dataset generated by Stage 3 (`data/03_embeddings_sentiment/posts_with_sentiment.parquet`) or your own ground-truth labeled CSV/Parquet.
+
+> 💡 **Important**: Sentiment fine-tuning requires clean text with sentiment labels. By default, the script automatically resolves to the Stage 3 dataset (`data/03_embeddings_sentiment/posts_with_sentiment.parquet`) containing `cleaned_text` and validated 3-class sentiment labels (`negative`, `neutral`, `positive`).
 
 ```bash
-# Standard Fine-Tuning (Recommended: 3 epochs, batch size 16, lr 2e-5)
+# Standard Fine-Tuning (Auto-resolves to data/03_embeddings_sentiment/posts_with_sentiment.parquet)
+python scripts/finetune_xlm_roberta.py --task sentiment --epochs 3 --batch_size 16 --lr 2e-5
+
+# Or explicitly pass the preprocessed sentiment dataset:
 python scripts/finetune_xlm_roberta.py --task sentiment --data data/03_embeddings_sentiment/posts_with_sentiment.parquet --epochs 3 --batch_size 16 --lr 2e-5
 
 # For lower VRAM GPUs (< 6GB) or CPU:
@@ -635,17 +675,22 @@ python scripts/finetune_xlm_roberta.py --task sentiment --data data/03_embedding
 ```
 
 ##### 2. Fine-Tune Contextual Sentence Embeddings (for BERTopic)
-> 💡 **Note**: Embedding fine-tuning uses self-supervised contrastive learning (SimCSE). It does **not** need sentiment labels, so it runs directly on cleaned posts from Stage 2 (`data/02_preprocessed/preprocessed_posts.parquet`).
+
+> 💡 **Note**: Embedding fine-tuning uses self-supervised contrastive learning (SimCSE). It does **not** need sentiment labels, so it runs directly on cleaned, spam-free posts from Stage 2 (`data/02_preprocessed/preprocessed_posts.parquet`).
 
 ```bash
-python scripts/finetune_xlm_roberta.py --task embedding --data data/02_preprocessed/preprocessed_posts.parquet --epochs 3 --batch_size 16 --lr 2e-5
+# Standard Embedding Fine-Tuning (Auto-resolves to data/02_preprocessed/preprocessed_posts.parquet)
+python scripts/finetune_xlm_roberta.py --task embedding --epochs 3 --batch_size 16 --lr 2e-5
 ```
 
 ##### 3. Check All Saved Versions & Metrics
+
 ```bash
 python scripts/finetune_xlm_roberta.py --list-versions
 ```
+
 Outputs a clean comparative table of all saved checkpoints:
+
 ```text
 ======================================================================
 SAVED XLM-RoBERTa MODEL VERSIONS OVERVIEW
@@ -657,10 +702,13 @@ SAVED XLM-RoBERTa MODEL VERSIONS OVERVIEW
 ```
 
 ##### 4. Evaluate Active Model on Dataset (Standalone Inspection)
+
 ```bash
 python scripts/finetune_xlm_roberta.py --evaluate --data data/03_embeddings_sentiment/posts_with_sentiment.parquet
 ```
+
 Computes and prints:
+
 - **Overall Accuracy** & **Macro F1 Score**
 - **Per-Class Breakdown** (Precision, Recall, F1 for Negative, Neutral, Positive)
 - **Confusion Matrix** (Rows: Actual, Columns: Predicted)
@@ -669,12 +717,12 @@ Computes and prints:
 
 #### ⚙️ Hyperparameter Tuning Guidelines
 
-| Hyperparameter | CLI Flag | Default | Recommended Range | Purpose & Best Practice |
-| :--- | :--- | :--- | :--- | :--- |
-| **Learning Rate** | `--lr` | `2e-5` | `1e-5` – `3e-5` | **Most Critical.** Do not set above `5e-5` to avoid destroying pre-trained representations (*Catastrophic Forgetting*). Use `1e-5` for small datasets (< 1k posts). |
-| **Epochs** | `--epochs` | `3` | `3` – `5` | Keep between 3 and 5. Avoid setting > 5 to prevent overfitting (memorizing training sentences). |
-| **Batch Size** | `--batch_size` | `16` | `8`, `16`, `32` | Depends on GPU VRAM. Use `8` for 4GB VRAM/CPU; `16` for 6-8GB VRAM; `32` for $\ge$ 12GB VRAM. If Out-of-Memory occurs, reduce to `8`. |
-| **Max Sequence Length** | `--max_length` | `128` | `96` – `256` | `128` covers 95%+ of social posts while running 4x faster and using 75% less memory than 512. |
+| Hyperparameter          | CLI Flag       | Default | Recommended Range | Purpose & Best Practice                                                                                                                                             |
+| :---------------------- | :------------- | :------ | :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Learning Rate**       | `--lr`         | `2e-5`  | `1e-5` – `3e-5`   | **Most Critical.** Do not set above `5e-5` to avoid destroying pre-trained representations (_Catastrophic Forgetting_). Use `1e-5` for small datasets (< 1k posts). |
+| **Epochs**              | `--epochs`     | `3`     | `3` – `5`         | Keep between 3 and 5. Avoid setting > 5 to prevent overfitting (memorizing training sentences).                                                                     |
+| **Batch Size**          | `--batch_size` | `16`    | `8`, `16`, `32`   | Depends on GPU VRAM. Use `8` for 4GB VRAM/CPU; `16` for 6-8GB VRAM; `32` for $\ge$ 12GB VRAM. If Out-of-Memory occurs, reduce to `8`.                               |
+| **Max Sequence Length** | `--max_length` | `128`   | `96` – `256`      | `128` covers 95%+ of social posts while running 4x faster and using 75% less memory than 512.                                                                       |
 
 ---
 
@@ -712,6 +760,7 @@ python scripts/test_two_stage_cascade.py
 ```
 
 #### Verification Test Suites:
+
 1. **Stage 6 Hurdle Target Generation**: Verifies that `time_to_trend_hours` is computed as a positive float ($\ge 6.0\text{h}$) for trending rows (`is_trending == 1`) and strictly set to `NaN` for non-trending rows (`is_trending == 0`), ensuring zero-inflation prevention.
 2. **Stage 8 Regressor Training**: Verifies `TimeToTrendRegressor` trains strictly on positive instances and successfully serializes to `models/time_to_trend/time_to_trend_xgb.json`.
 3. **Stage 8 Cascade Integration**: Validates that running Stage 8 coordinates Stage 1 Gatekeeper with Stage 2 Countdown Regressor without runtime crashes or schema mismatches.
@@ -724,12 +773,12 @@ python scripts/test_two_stage_cascade.py
 
 All notebooks in [`notebooks/`](notebooks/) are pre-configured to use the project kernel **`Python (social_listening venv)`**:
 
-| Notebook | Focus & Stages | Description |
-| :--- | :--- | :--- |
-| [`01_data_exploration_and_preprocessing.ipynb`](notebooks/01_data_exploration_and_preprocessing.ipynb) | **Stages 1 & 2** | Step-by-step raw data exploration, schema ingestion (`DataCollector`), deduplication (`remove_duplicates`), spam filtering (`filter_spam_and_bots`), text cleaning (`clean_text`), NFKC normalization (`normalize_text`), and semantic preservation (`preserve_semantic_information`). |
-| [`02_topic_modeling_bertopic.ipynb`](notebooks/02_topic_modeling_bertopic.ipynb) | **Stages 3 & 4** | Multilingual sentence representation via XLM-RoBERTa, sentiment score distribution, and BERTopic clustering analysis (UMAP + HDBSCAN + c-TF-IDF). |
-| [`03_trend_prediction_evaluation.ipynb`](notebooks/03_trend_prediction_evaluation.ipynb) | **Stages 5 to 8** | Topic metrics tracking over time, feature matrix construction, chronological split, time-series forecasting, gradient boosting classification, and evaluation curves. |
-| [`04_model_evaluation_and_visualization.ipynb`](notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and ARIMA/ARIMAX trajectory plots. |
+| Notebook                                                                                               | Focus & Stages       | Description                                                                                                                                                                                                                                                                            |
+| :----------------------------------------------------------------------------------------------------- | :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`01_data_exploration_and_preprocessing.ipynb`](notebooks/01_data_exploration_and_preprocessing.ipynb) | **Stages 1 & 2**     | Step-by-step raw data exploration, schema ingestion (`DataCollector`), deduplication (`remove_duplicates`), spam filtering (`filter_spam_and_bots`), text cleaning (`clean_text`), NFKC normalization (`normalize_text`), and semantic preservation (`preserve_semantic_information`). |
+| [`02_topic_modeling_bertopic.ipynb`](notebooks/02_topic_modeling_bertopic.ipynb)                       | **Stages 3 & 4**     | Multilingual sentence representation via XLM-RoBERTa, sentiment score distribution, and BERTopic clustering analysis (UMAP + HDBSCAN + c-TF-IDF).                                                                                                                                      |
+| [`03_trend_prediction_evaluation.ipynb`](notebooks/03_trend_prediction_evaluation.ipynb)               | **Stages 5 to 8**    | Topic metrics tracking over time, feature matrix construction, chronological split, time-series forecasting, gradient boosting classification, and evaluation curves.                                                                                                                  |
+| [`04_model_evaluation_and_visualization.ipynb`](notebooks/04_model_evaluation_and_visualization.ipynb) | **Evaluation Suite** | Interactive visual evaluation suite: Confusion Matrix heatmaps, ROC curve, Precision-Recall curve, Decision Threshold optimization, Feature Importance gain, Calibration curves, and ARIMA/ARIMAX trajectory plots.                                                                    |
 
 ### Selecting the Kernel in VS Code / IDE:
 
@@ -737,4 +786,3 @@ All notebooks in [`notebooks/`](notebooks/) are pre-configured to use the projec
 2. In the top-right corner of the notebook editor, click **Select Kernel** $\rightarrow$ **Python Environments...**
 3. Select **`Python (social_listening venv)`** (or `./venv/Scripts/python.exe`).
 4. Click **Run All** to execute interactively without dependency errors.
-

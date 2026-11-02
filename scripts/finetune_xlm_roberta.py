@@ -73,14 +73,40 @@ class TextClassificationDataset(Dataset):
 
 
 def load_training_data(data_path: str):
-    """Loads dataframe from parquet or csv gracefully."""
+    """Loads dataframe from parquet or csv gracefully, supporting file paths and directory paths."""
     resolved = resolve_path(data_path)
+
+    # If user passed a directory path (e.g. 'data/01_raw'), auto-detect the dataset inside
+    if os.path.exists(resolved) and os.path.isdir(resolved):
+        preferred_in_dir = [
+            os.path.join(resolved, "posts_with_sentiment.parquet"),
+            os.path.join(resolved, "preprocessed_posts.parquet"),
+            os.path.join(resolved, "raw_posts.parquet"),
+            os.path.join(resolved, "merged_sports_dataset.csv"),
+            os.path.join(resolved, "input_data.parquet"),
+            os.path.join(resolved, "input_data.csv"),
+        ]
+        found = False
+        for p in preferred_in_dir:
+            if os.path.exists(p):
+                resolved = p
+                found = True
+                break
+        if not found:
+            files = [
+                os.path.join(resolved, f)
+                for f in os.listdir(resolved)
+                if f.endswith((".parquet", ".csv")) and not f.startswith(".")
+            ]
+            if files:
+                resolved = files[0]
+
     if not os.path.exists(resolved):
         candidates = [
-            "data/02_preprocessed/preprocessed_posts.parquet",
             "data/03_embeddings_sentiment/posts_with_sentiment.parquet",
-            "data/01_raw/social_listening_30days.csv",
-            "data/01_raw/social_listening_dataset.csv"
+            "data/02_preprocessed/preprocessed_posts.parquet",
+            "data/01_raw/raw_posts.parquet",
+            "data/01_raw/merged_sports_dataset.csv",
         ]
         for c in candidates:
             rc = resolve_path(c)
@@ -131,8 +157,8 @@ def evaluate_sentiment_model(model, tokenizer, texts, labels, batch_size=32, max
     avg_val_loss = float(total_val_loss / max(1, step_count))
 
     target_names = ["negative", "neutral", "positive"]
-    report = classification_report(all_targets, all_preds, target_names=target_names, output_dict=True, zero_division=0)
-    cm = confusion_matrix(all_targets, all_preds).tolist()
+    report = classification_report(all_targets, all_preds, labels=[0, 1, 2], target_names=target_names, output_dict=True, zero_division=0)
+    cm = confusion_matrix(all_targets, all_preds, labels=[0, 1, 2]).tolist()
 
     return {
         "val_loss": round(avg_val_loss, 4),
@@ -172,15 +198,52 @@ def finetune_sentiment(args):
     logger.info(f"Using text column: '{text_col}' (Total samples: {len(df)})")
 
     # Map labels: 0: negative, 1: neutral, 2: positive
-    if "sentiment_label" in df.columns:
+    if "sentiment_label" in df.columns and df["sentiment_label"].notna().sum() > 0:
         label_map = {"negative": 0, "neutral": 1, "positive": 2}
         labels = df["sentiment_label"].astype(str).str.lower().map(label_map).fillna(1).astype(int).tolist()
-    elif "sentiment_score" in df.columns:
+    elif "sentiment_score" in df.columns and df["sentiment_score"].notna().sum() > 0:
         scores = df["sentiment_score"].fillna(0.0).values
         labels = np.where(scores > 0.05, 2, np.where(scores < -0.05, 0, 1)).tolist()
     else:
-        logger.warning("No explicit sentiment labels found. Using neutral (1) placeholder for domain adaptation.")
-        labels = [1] * len(df)
+        # Check if we can enrich sentiment labels from existing Stage 3 artifact
+        labels = None
+        sentiment_ref = resolve_path("data/03_embeddings_sentiment/posts_with_sentiment.parquet")
+        if os.path.exists(sentiment_ref):
+            try:
+                ref_df = load_dataframe(sentiment_ref)
+                if "sentiment_label" in ref_df.columns:
+                    match_col = "post_id" if ("post_id" in df.columns and "post_id" in ref_df.columns) else (
+                        "text" if ("text" in df.columns and "text" in ref_df.columns) else None
+                    )
+                    if match_col:
+                        ref_map = ref_df.drop_duplicates(subset=[match_col]).set_index(match_col)["sentiment_label"].to_dict()
+                        mapped_series = df[match_col].map(ref_map)
+                        if mapped_series.notna().sum() > 0:
+                            label_map = {"negative": 0, "neutral": 1, "positive": 2}
+                            labels = mapped_series.astype(str).str.lower().map(label_map).fillna(1).astype(int).tolist()
+                            logger.info(f"Enriched {mapped_series.notna().sum()}/{len(df)} sentiment labels from stage 3 reference data.")
+            except Exception as e:
+                logger.debug(f"Reference sentiment label lookup failed: {e}")
+
+        if labels is None:
+            # Generate pseudo-labels using base sentiment model
+            logger.info("Raw dataset has no sentiment labels. Generating pseudo-labels from base sentiment model...")
+            model.eval()
+            pseudo_labels = []
+            with torch.no_grad():
+                ds_temp = TextClassificationDataset(df[text_col].tolist(), None, tokenizer, max_length=args.max_length)
+                dl_temp = DataLoader(ds_temp, batch_size=args.batch_size, shuffle=False)
+                for b in dl_temp:
+                    ids = b["input_ids"].to(device)
+                    mask = b["attention_mask"].to(device)
+                    logits = model(input_ids=ids, attention_mask=mask).logits
+                    preds = torch.argmax(logits, dim=-1).cpu().numpy().tolist()
+                    pseudo_labels.extend(preds)
+            labels = pseudo_labels
+            logger.info(
+                f"Generated {len(labels)} pseudo-labels (Distribution: "
+                f"Neg={labels.count(0)}, Neu={labels.count(1)}, Pos={labels.count(2)})"
+            )
 
     # Train / Validation Split (85% train, 15% validation)
     texts_all = df[text_col].tolist()
@@ -405,14 +468,45 @@ def run_standalone_evaluation(args):
     df = load_training_data(args.data)
     text_col = "cleaned_text" if "cleaned_text" in df.columns else ("text" if "text" in df.columns else df.columns[0])
 
-    if "sentiment_label" in df.columns:
+    if "sentiment_label" in df.columns and df["sentiment_label"].notna().sum() > 0:
         label_map = {"negative": 0, "neutral": 1, "positive": 2}
         labels = df["sentiment_label"].astype(str).str.lower().map(label_map).fillna(1).astype(int).tolist()
-    elif "sentiment_score" in df.columns:
+    elif "sentiment_score" in df.columns and df["sentiment_score"].notna().sum() > 0:
         scores = df["sentiment_score"].fillna(0.0).values
         labels = np.where(scores > 0.05, 2, np.where(scores < -0.05, 0, 1)).tolist()
     else:
-        labels = [1] * len(df)
+        labels = None
+        sentiment_ref = resolve_path("data/03_embeddings_sentiment/posts_with_sentiment.parquet")
+        if os.path.exists(sentiment_ref):
+            try:
+                ref_df = load_dataframe(sentiment_ref)
+                if "sentiment_label" in ref_df.columns:
+                    match_col = "post_id" if ("post_id" in df.columns and "post_id" in ref_df.columns) else (
+                        "text" if ("text" in df.columns and "text" in ref_df.columns) else None
+                    )
+                    if match_col:
+                        ref_map = ref_df.drop_duplicates(subset=[match_col]).set_index(match_col)["sentiment_label"].to_dict()
+                        mapped_series = df[match_col].map(ref_map)
+                        if mapped_series.notna().sum() > 0:
+                            label_map = {"negative": 0, "neutral": 1, "positive": 2}
+                            labels = mapped_series.astype(str).str.lower().map(label_map).fillna(1).astype(int).tolist()
+                            logger.info(f"Enriched {mapped_series.notna().sum()}/{len(df)} sentiment labels from stage 3 reference data for evaluation.")
+            except Exception:
+                pass
+        if labels is None:
+            logger.warning("No ground-truth sentiment labels found for evaluation. Predicting labels using model.")
+            model.eval()
+            pseudo_labels = []
+            with torch.no_grad():
+                ds_temp = TextClassificationDataset(df[text_col].tolist(), None, tokenizer, max_length=args.max_length)
+                dl_temp = DataLoader(ds_temp, batch_size=args.batch_size, shuffle=False)
+                for b in dl_temp:
+                    ids = b["input_ids"].to(device)
+                    mask = b["attention_mask"].to(device)
+                    logits = model(input_ids=ids, attention_mask=mask).logits
+                    preds = torch.argmax(logits, dim=-1).cpu().numpy().tolist()
+                    pseudo_labels.extend(preds)
+            labels = pseudo_labels
 
     metrics = evaluate_sentiment_model(
         model, tokenizer, df[text_col].tolist(), labels, batch_size=args.batch_size, max_length=args.max_length, device=device
@@ -468,8 +562,8 @@ def main():
     parser = argparse.ArgumentParser(description="XLM-RoBERTa Auto-Versioning Fine-Tuning CLI")
     parser.add_argument("--task", type=str, choices=["sentiment", "embedding", "both"], default="sentiment",
                         help="Fine-tuning target task: 'sentiment', 'embedding', or 'both'")
-    parser.add_argument("--data", type=str, default="data/02_preprocessed/preprocessed_posts.parquet",
-                        help="Path to training data (parquet or csv)")
+    parser.add_argument("--data", type=str, default=None,
+                        help="Path to training data (default: auto-resolved to preprocessed dataset based on task)")
     parser.add_argument("--base_model", type=str, default=None,
                         help="Base model checkpoint or Hugging Face ID (default: auto-resolved)")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
@@ -481,6 +575,26 @@ def main():
     parser.add_argument("--evaluate", action="store_true", help="Run standalone evaluation on dataset without training")
     args = parser.parse_args()
 
+    # Auto-resolve optimal preprocessed data path if not explicitly provided
+    orig_data = args.data
+    if args.data is None:
+        if args.task == "sentiment" or args.evaluate:
+            sentiment_candidates = [
+                "data/03_embeddings_sentiment/posts_with_sentiment.parquet",
+                "data/02_preprocessed/preprocessed_posts.parquet",
+                "data/01_raw/raw_posts.parquet"
+            ]
+            args.data = next((c for c in sentiment_candidates if os.path.exists(resolve_path(c))), sentiment_candidates[0])
+        elif args.task == "embedding":
+            embed_candidates = [
+                "data/02_preprocessed/preprocessed_posts.parquet",
+                "data/03_embeddings_sentiment/posts_with_sentiment.parquet",
+                "data/01_raw/raw_posts.parquet"
+            ]
+            args.data = next((c for c in embed_candidates if os.path.exists(resolve_path(c))), embed_candidates[0])
+        else: # both
+            args.data = "data/02_preprocessed/preprocessed_posts.parquet"
+
     if args.list_versions:
         show_versions()
         return
@@ -490,8 +604,12 @@ def main():
         return
 
     if args.task in ("sentiment", "both"):
+        if orig_data is None and args.task == "both":
+            args.data = "data/03_embeddings_sentiment/posts_with_sentiment.parquet"
         finetune_sentiment(args)
     if args.task in ("embedding", "both"):
+        if orig_data is None and args.task == "both":
+            args.data = "data/02_preprocessed/preprocessed_posts.parquet"
         finetune_embedding(args)
 
 

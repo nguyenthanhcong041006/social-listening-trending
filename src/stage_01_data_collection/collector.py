@@ -55,6 +55,13 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     if "post_id" in df.columns:
         df["post_id"] = df["post_id"].astype(str)
 
+    # Standardize timestamp into uniform ISO-like string YYYY-MM-DD HH:MM:SS
+    if "timestamp" in df.columns:
+        try:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed", utc=True).dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            logger.warning(f"Could not standardize timestamp column: {e}")
+
     # Standardize platform names
     if "platform" not in df.columns:
         df["platform"] = "generic"

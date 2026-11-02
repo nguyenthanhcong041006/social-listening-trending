@@ -3,6 +3,7 @@ from .arimax_forecaster import ARIMAXForecaster
 from .feature_fusion import FeatureFusion
 from .lightgbm_model import LightGBMTrendPredictor
 from .xgboost_model import XGBoostTrendPredictor
+from .random_forest_model import RandomForestTrendPredictor
 from .evaluator import evaluate_trend_predictions
 from .visualizer import (
     plot_confusion_matrix,
@@ -37,6 +38,7 @@ __all__ = [
     "FeatureFusion",
     "LightGBMTrendPredictor",
     "XGBoostTrendPredictor",
+    "RandomForestTrendPredictor",
     "evaluate_trend_predictions",
     "plot_confusion_matrix",
     "plot_roc_curve",

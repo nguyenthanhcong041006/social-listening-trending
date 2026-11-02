@@ -60,10 +60,11 @@ class TopicDetector:
         
         has_timestamp = "timestamp" in df.columns and df["timestamp"].notna().sum() > 10
         if temporal_inductive and has_timestamp and train_ratio < 1.0:
-            df_sorted_times = sorted(pd.to_datetime(df["timestamp"]).unique())
+            ts_series = pd.to_datetime(df["timestamp"], format="mixed", utc=True).dt.tz_localize(None)
+            df_sorted_times = sorted(ts_series.unique())
             cutoff_idx = int(len(df_sorted_times) * train_ratio)
             train_cutoff = df_sorted_times[cutoff_idx]
-            is_train = pd.to_datetime(df["timestamp"]) <= train_cutoff
+            is_train = ts_series <= train_cutoff
             train_indices = np.where(is_train.values)[0]
             val_test_indices = np.where(~is_train.values)[0]
             

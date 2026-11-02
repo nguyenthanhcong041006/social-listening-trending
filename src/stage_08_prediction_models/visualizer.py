@@ -598,10 +598,15 @@ MODEL_COLORS = {
     "ARIMAX + LightGBM": "#2ca02c",  # Green
     "ARIMA + XGBoost": "#ff7f0e",   # Orange
     "ARIMAX + XGBoost": "#9467bd",  # Purple
+    "ARIMA + Random Forest": "#e377c2",   # Pink / Raspberry
+    "ARIMAX + Random Forest": "#8c564b",  # Brown / Terra Cotta
+    "Random Forest Baseline": "#17becf",  # Teal / Cyan
     "SARIMA + LightGBM": "#1f77b4",
     "SARIMAX + LightGBM": "#2ca02c",
     "SARIMA + XGBoost": "#ff7f0e",
     "SARIMAX + XGBoost": "#9467bd",
+    "SARIMA + Random Forest": "#e377c2",
+    "SARIMAX + Random Forest": "#8c564b",
 }
 
 MODEL_LINESTYLES = {
@@ -609,10 +614,15 @@ MODEL_LINESTYLES = {
     "ARIMAX + LightGBM": "-.",
     "ARIMA + XGBoost": "--",
     "ARIMAX + XGBoost": ":",
+    "ARIMA + Random Forest": "-",
+    "ARIMAX + Random Forest": "-.",
+    "Random Forest Baseline": "--",
     "SARIMA + LightGBM": "-",
     "SARIMAX + LightGBM": "-.",
     "SARIMA + XGBoost": "--",
-    "SARIMAX + XGBoost": ":"
+    "SARIMAX + XGBoost": ":",
+    "SARIMA + Random Forest": "-",
+    "SARIMAX + Random Forest": "-.",
 }
 
 def plot_model_comparison_roc(
@@ -854,15 +864,16 @@ def plot_model_comparison_confusion_matrices(
     save_path: Optional[str] = None
 ):
     """
-    Plots a 2x2 grid of confusion matrices for direct side-by-side error inspection:
-    [SARIMA + LightGBM, SARIMAX + LightGBM, SARIMA + XGBoost, SARIMAX + XGBoost]
+    Plots a multi-panel grid of confusion matrices for direct side-by-side error inspection
+    across all evaluated model candidates (LightGBM, XGBoost, Random Forest).
     """
-    fig, axes = plt.subplots(2, 2, figsize=(11, 9.5))
-    axes = axes.flatten()
+    n_models = len(models_preds)
+    ncols = min(3, n_models) if n_models > 2 else n_models
+    nrows = (n_models + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.8 * nrows))
+    axes = np.array(axes).flatten()
 
     for idx, (name, y_pred) in enumerate(models_preds.items()):
-        if idx >= 4:
-            break
         ax = axes[idx]
         cm = confusion_matrix(y_true, y_pred)
         sns.heatmap(
@@ -878,6 +889,10 @@ def plot_model_comparison_confusion_matrices(
         ax.set_title(f"{name}", fontsize=11, fontweight="bold")
         ax.set_xlabel("Predicted Label", fontsize=10)
         ax.set_ylabel("True Label", fontsize=10)
+
+    # Turn off unused subplots if any
+    for unused_idx in range(len(models_preds), len(axes)):
+        axes[unused_idx].axis("off")
 
     fig.suptitle("Comparative Confusion Matrices (Test Set)", fontsize=14, fontweight="bold", y=0.99)
     plt.tight_layout()
