@@ -23,6 +23,10 @@
 *.heic
 *.heif
 
+# Whitelist tracked benchmark figures in documentation
+!docs/images/
+!docs/images/**
+
 # ------------------------------------------------------------------------------
 # 2. VIDEO & MULTIMEDIA FILES (Mandatory Project Requirement)
 # ------------------------------------------------------------------------------
