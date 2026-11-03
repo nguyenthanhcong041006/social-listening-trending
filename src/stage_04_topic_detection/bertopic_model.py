@@ -14,6 +14,7 @@ class TopicDetector:
     2. Clustering (UMAP + HDBSCAN)
     3. Topic Representation (c-TF-IDF with Sports Stopword Filtering)
     4. Hierarchical Topic Extraction (Tree Structure: Sports -> Leagues/Clubs -> Micro-events/Drama)
+    5. Optional LLM Semantic Topic Representation (Headline summarization for topic clusters)
     """
 
     def __init__(self, config: dict = None):
@@ -38,6 +39,78 @@ class TopicDetector:
             top_n_words=repr_cfg.get("top_n_words", 10),
             verbose=True
         )
+
+    def _enhance_topic_names_with_llm(self, topic_info: pd.DataFrame, df: pd.DataFrame, text_column: str) -> pd.DataFrame:
+        """
+        Enhances c-TF-IDF keyword cluster names into human-readable sports headlines using LLM.
+        Example: '0_warriors_lakers_preseason' -> '[NBA Preseason] Warriors vs Lakers Game Debates'
+        Gracefully falls back to original c-TF-IDF names if LLM is unavailable or unconfigured.
+        """
+        llm_cfg = self.config.get("llm_representation", {})
+        if not llm_cfg.get("enabled", True):
+            return topic_info
+
+        from src.utils.llm_client import LLMClient
+        client = LLMClient(
+            provider=llm_cfg.get("provider"),
+            model=llm_cfg.get("model")
+        )
+
+        if not client.is_available():
+            logger.info("LLM topic representation skipped (no GEMINI_API_KEY or OPENAI_API_KEY configured). Retaining c-TF-IDF names.")
+            return topic_info
+
+        valid_topics = topic_info[topic_info["Topic"] != -1]
+        if valid_topics.empty:
+            return topic_info
+
+        logger.info(f"Generating semantic titles for {len(valid_topics)} topics via LLM ({client.provider.upper()})...")
+
+        # Prepare cluster summaries for prompt
+        cluster_prompts = []
+        for _, row in valid_topics.iterrows():
+            t_id = int(row["Topic"])
+            c_name = str(row["Name"])
+            # Sample up to 3 posts belonging to this topic
+            sample_posts = df[df["topic_id"] == t_id][text_column].head(3).tolist()
+            sample_texts = " | ".join([p.replace("\n", " ")[:120] for p in sample_posts])
+            cluster_prompts.append(
+                f"- Topic ID {t_id} (Keywords: {c_name}):\n  Sample Posts: {sample_texts}"
+            )
+
+        prompt = (
+            "You are a sports media editor. Given the following sports discussion clusters (keywords and sample posts), "
+            "generate a concise, human-readable semantic headline for each topic.\n"
+            "Format: '[Category/League] Concise Topic Headline' (maximum 5-7 words).\n"
+            "Examples:\n"
+            "  Topic ID 0: '[NBA Preseason] Warriors vs Lakers Game Debates'\n"
+            "  Topic ID 1: '[Premier League] Arsenal vs Man City Title Race'\n\n"
+            "Clusters:\n" + "\n".join(cluster_prompts) + "\n\n"
+            "Return a JSON object mapping each topic ID (as a string) to its semantic headline:\n"
+            "{\"0\": \"...\", \"1\": \"...\"}"
+        )
+
+        try:
+            semantic_names = client.generate_json(
+                prompt,
+                system_prompt="You summarize sports social discussion clusters into professional news headlines. Return valid JSON only."
+            )
+            if isinstance(semantic_names, dict):
+                # Save original c-TF-IDF name column for transparency
+                topic_info["c_tfidf_name"] = topic_info["Name"]
+                new_names = {}
+                for t_id, headline in semantic_names.items():
+                    try:
+                        new_names[int(t_id)] = str(headline).strip()
+                    except (ValueError, TypeError):
+                        pass
+
+                topic_info["Name"] = topic_info["Topic"].map(new_names).fillna(topic_info["Name"])
+                logger.success(f"Successfully enriched {len(new_names)} topic headlines via LLM.")
+        except Exception as e:
+            logger.warning(f"LLM topic title generation encountered an issue ({e}). Keeping c-TF-IDF names.")
+
+        return topic_info
 
     def fit_transform(
         self,
@@ -122,6 +195,7 @@ class TopicDetector:
 
         # Retrieve topic names and keyword representations
         topic_info = self.topic_model.get_topic_info()
+        topic_info = self._enhance_topic_names_with_llm(topic_info, df, text_column)
         topic_name_map = dict(zip(topic_info["Topic"], topic_info["Name"]))
         df["topic_name"] = df["topic_id"].map(topic_name_map)
         
